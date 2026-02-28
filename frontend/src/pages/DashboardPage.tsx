@@ -1,0 +1,63 @@
+import { Link } from 'react-router-dom';
+import { useAppState, useTodayYmd } from '../AppState';
+import { ymdToDisplay } from '../utils/date';
+
+export function DashboardPage() {
+  const { data } = useAppState();
+  const today = useTodayYmd();
+  const todayRecord = data.dailyRecords[today];
+  const latestVisit = [...data.gymVisits].sort((a, b) => b.date.localeCompare(a.date))[0];
+
+  return (
+    <div className="stack-lg">
+      <section className="hero-card">
+        <p className="eyebrow">Today</p>
+        <h1>ジムで迷わず記録する</h1>
+        <p>
+          空いているマシンから淡々と実施。入力は一覧上で完結し、最後に <strong>記録して終了</strong> で確定します。
+        </p>
+        <div className="row-wrap">
+          <Link to="/training-session" className="btn primary">
+            トレーニング開始
+          </Link>
+          <Link to={`/daily/${today}`} className="btn ghost">
+            本日の日記をつける
+          </Link>
+        </div>
+      </section>
+
+      <section className="grid-2">
+        <article className="card">
+          <h2>今日の状態</h2>
+          <p className="muted">{ymdToDisplay(today)}</p>
+          <ul className="simple-list">
+            <li>体重: {todayRecord?.bodyWeightKg ? `${todayRecord.bodyWeightKg} kg` : '未入力'}</li>
+            <li>体脂肪率: {todayRecord?.bodyFatPercent ? `${todayRecord.bodyFatPercent} %` : '未入力'}</li>
+            <li>体調: {todayRecord?.conditionRating ? `${todayRecord.conditionRating} / 5` : '未入力'}</li>
+          </ul>
+        </article>
+
+        <article className="card">
+          <h2>直近の筋トレ</h2>
+          {latestVisit ? (
+            <>
+              <p className="muted">{ymdToDisplay(latestVisit.date)}</p>
+              <ul className="simple-list">
+                {latestVisit.entries.slice(0, 4).map((entry) => (
+                  <li key={entry.id}>
+                    {entry.machineName} {entry.weightKg}kg x {entry.reps}回 x {entry.sets}set
+                  </li>
+                ))}
+              </ul>
+              <Link to="/calendar" className="text-link">
+                カレンダーで確認
+              </Link>
+            </>
+          ) : (
+            <p className="muted">まだ記録がありません。</p>
+          )}
+        </article>
+      </section>
+    </div>
+  );
+}

@@ -1,0 +1,151 @@
+import { useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { useAppState, useTodayYmd } from '../AppState';
+import { ConditionRatingPicker } from '../components/ConditionRatingPicker';
+import { toLocalIsoWithOffset, ymdToDisplay } from '../utils/date';
+
+export function DailyPage() {
+  const { date } = useParams<{ date: string }>();
+  const today = useTodayYmd();
+  const targetDate = date ?? today;
+
+  const { data, saveDailyRecord, setConditionRating, addOtherActivity, removeOtherActivity } = useAppState();
+  const [activityInput, setActivityInput] = useState('');
+
+  const record = data.dailyRecords[targetDate] ?? {
+    date: targetDate,
+    timeZoneId: data.timeZoneId,
+    otherActivities: [] as string[]
+  };
+
+  const visits = useMemo(
+    () => data.gymVisits.filter((visit) => visit.date === targetDate),
+    [data.gymVisits, targetDate]
+  );
+
+  return (
+    <div className="stack-lg">
+      <section className="card">
+        <div className="row-between">
+          <h1>Daily</h1>
+          <div className="row-wrap">
+            <Link to="/calendar" className="btn ghost">
+              カレンダー
+            </Link>
+            <Link to="/training-session" className="btn primary">
+              トレーニング開始
+            </Link>
+          </div>
+        </div>
+        <p className="muted">{ymdToDisplay(targetDate)} / TimeZone: {record.timeZoneId}</p>
+      </section>
+
+      <section className="card">
+        <h2>体重・体脂肪率</h2>
+        <div className="input-grid">
+          <label>
+            体重 (kg)
+            <input
+              type="number"
+              min={0}
+              step={0.1}
+              value={record.bodyWeightKg ?? ''}
+              onChange={(e) =>
+                saveDailyRecord(targetDate, {
+                  bodyWeightKg: e.target.value ? Number(e.target.value) : undefined,
+                  bodyMetricRecordedAtLocal: toLocalIsoWithOffset(new Date())
+                })
+              }
+            />
+          </label>
+          <label>
+            体脂肪率 (%)
+            <input
+              type="number"
+              min={0}
+              step={0.1}
+              value={record.bodyFatPercent ?? ''}
+              onChange={(e) =>
+                saveDailyRecord(targetDate, {
+                  bodyFatPercent: e.target.value ? Number(e.target.value) : undefined,
+                  bodyMetricRecordedAtLocal: toLocalIsoWithOffset(new Date())
+                })
+              }
+            />
+          </label>
+        </div>
+        <p className="muted">記録時刻: {record.bodyMetricRecordedAtLocal ? record.bodyMetricRecordedAtLocal.replace('T', ' ').slice(0, 16) : '未記録'}</p>
+      </section>
+
+      <section className="card">
+        <h2>体調（1タップ記録対応）</h2>
+        <ConditionRatingPicker value={record.conditionRating} onChange={(rating) => setConditionRating(targetDate, rating)} />
+        <label>
+          コメント
+          <textarea
+            value={record.conditionComment ?? ''}
+            onChange={(e) => saveDailyRecord(targetDate, { conditionComment: e.target.value })}
+            placeholder="任意で体調メモ"
+          />
+        </label>
+      </section>
+
+      <section className="card">
+        <h2>日記</h2>
+        <textarea
+          value={record.diary ?? ''}
+          onChange={(e) => saveDailyRecord(targetDate, { diary: e.target.value })}
+          placeholder="今日の記録や気づき"
+        />
+      </section>
+
+      <section className="card">
+        <h2>その他トレーニング</h2>
+        <div className="row-wrap">
+          <input value={activityInput} onChange={(e) => setActivityInput(e.target.value)} placeholder="例: ジョギング 1km" />
+          <button
+            type="button"
+            className="btn subtle"
+            onClick={() => {
+              addOtherActivity(targetDate, activityInput);
+              setActivityInput('');
+            }}
+          >
+            追加
+          </button>
+        </div>
+        <ul className="simple-list">
+          {record.otherActivities.map((activity, idx) => (
+            <li key={`${activity}-${idx}`}>
+              {activity}
+              <button type="button" className="text-link danger-link" onClick={() => removeOtherActivity(targetDate, idx)}>
+                削除
+              </button>
+            </li>
+          ))}
+          {record.otherActivities.length === 0 && <li className="muted">未入力</li>}
+        </ul>
+      </section>
+
+      <section className="card">
+        <h2>当日の筋トレ内容</h2>
+        {visits.length === 0 ? (
+          <p className="muted">この日の筋トレ記録はまだありません。</p>
+        ) : (
+          visits.map((visit) => (
+            <div className="visit-summary" key={visit.id}>
+              <p className="muted">{visit.startedAtLocal.replace('T', ' ').slice(11, 16)} - {visit.endedAtLocal.replace('T', ' ').slice(11, 16)}</p>
+              <ul className="simple-list">
+                {visit.entries.map((entry) => (
+                  <li key={entry.id}>
+                    {entry.machineName} {entry.weightKg}kg x {entry.reps}回 x {entry.sets}set
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        )}
+      </section>
+    </div>
+  );
+}

@@ -115,7 +115,7 @@ export function DailyPage() {
       </section>
 
       <section className="card">
-        <h2>体調（1タップ記録対応）</h2>
+        <h2>体調</h2>
         <ConditionRatingPicker value={record.conditionRating} onChange={(rating) => setConditionRating(targetDate, rating)} />
         <label>
           コメント

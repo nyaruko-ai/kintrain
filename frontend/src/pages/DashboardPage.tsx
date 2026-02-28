@@ -11,7 +11,7 @@ export function DashboardPage() {
   return (
     <div className="stack-lg">
       <section className="hero-card">
-        <p className="eyebrow">Today</p>
+        <p className="eyebrow">TODAY {ymdToDisplay(today)}</p>
         <div className="row-wrap">
           <Link to="/training-session" className="btn primary">
             トレーニング開始

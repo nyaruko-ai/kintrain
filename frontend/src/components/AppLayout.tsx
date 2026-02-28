@@ -14,8 +14,8 @@ export function AppLayout() {
       <header className="top-header">
         <div className="top-header-main">
           <Link to="/dashboard" className="brand">
-            <span className="brand-dot" />
-            KinTrain Mock
+            <img src="/icons/icon-192.png" alt="" className="brand-icon" aria-hidden="true" />
+            KinTrain
           </Link>
           <Link to="/settings" className="header-user-icon-link" aria-label="ユーザ設定">
             <span className="header-user-icon" aria-hidden="true">
@@ -23,7 +23,6 @@ export function AppLayout() {
             </span>
           </Link>
         </div>
-        <p className="header-subtitle">AIコーチ（ニャル子）対応 / モックUI</p>
       </header>
 
       <main className="page-shell">

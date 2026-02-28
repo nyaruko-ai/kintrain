@@ -19,11 +19,14 @@
 - Cognito認証（ログイン/ログアウト/パスワード再設定）
 - Core API（API Gateway + Lambda分割）とDynamoDB CRUD
 - トレーニングメニュー回数レンジ（`defaultRepsMin/defaultRepsMax`）
+- Daily記録の自動保存（3秒デバウンス）+ 明示保存ボタン
 - iPhoneホーム画面追加対応（manifest + standaloneメタタグ）
 - AIチャットUIのモックストリーミング
+- AIキャラクター設定API（`GET/PUT /ai-character-profile`）
 - 未実装:
 - AgentCore Runtime / Gateway / Memory の本番接続
 - UIからの `PUT /ai-character-profile` 永続保存連携（現在はローカル反映）
+- `bodyMetricMeasuredAtUtc/bodyMetricMeasuredAtLocal` のサーバー自動生成
 - `/history` `/progress` の本実装（現状プレースホルダ）
 
 ## 3. システム構成要件
@@ -172,8 +175,6 @@
 - `DailyRecord` は以下を保持できること。
 - `bodyWeightKg`（任意）
 - `bodyFatPercent`（任意）
-- `bodyMetricMeasuredAtUtc`（RFC3339 UTC）
-- `bodyMetricMeasuredAtLocal`（RFC3339 + offset）
 - `bodyMetricMeasuredTimeLocal`（`HH:mm`、UI入力値）
 - `timeZoneId`（IANA、例: `Asia/Tokyo`）
 - 体調5段階評価（1:最悪, 5:最高）
@@ -182,7 +183,8 @@
 - その他トレーニング（フリー入力、複数可）
 - アイコンタップのみで体調評価を即記録できること（コメント入力なし可）。
 - `DailyRecord` は後から更新できること。
-- `bodyMetricMeasuredTimeLocal` が入力された場合、サーバーは `date` + `timeZoneId` と組み合わせて `bodyMetricMeasuredAtLocal/UTC` を生成して保存すること。
+- 現行実装では `bodyMetricMeasuredTimeLocal` と `timeZoneId` を保存する。
+- `bodyMetricMeasuredAtUtc` / `bodyMetricMeasuredAtLocal` のサーバー自動生成は次フェーズで実装する。
 
 ### 5.7 カレンダー参照
 
@@ -220,7 +222,8 @@
 - キャラクター設定方法:
 - 初回表示時は `GET /ai-character-profile` を取得し、未設定時は上記ファイルを読み込む。
 - ユーザーは `/settings` の「AIコーチキャラクター設定」で変更する。
-- 変更内容は `PUT /ai-character-profile` でユーザー単位に保存する。
+- Core API は `PUT /ai-character-profile` を提供する。
+- 現行UIの「AI設定を反映」はローカル状態更新のみで、`PUT` 呼び出し連携は次フェーズで実装する。
 - 未設定時は `nyaruko` 既定値へフォールバックする。
 
 ## 6. API要件（CoreApiEndpoint: API Gateway）
@@ -234,7 +237,7 @@
 - `DELETE /training-menu-items/{trainingMenuItemId}`（物理削除）
 - `PUT /training-menu-items/reorder`
 - `POST /gym-visits`
-- `GET /gym-visits?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /gym-visits?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=n`（`from/to` は任意）
 - `GET /gym-visits/{visitId}`
 - `PUT /gym-visits/{visitId}`
 - `DELETE /gym-visits/{visitId}`
@@ -428,7 +431,8 @@
 - UTC保存: `YYYY-MM-DDTHH:mm:ssZ`（例: `2026-02-28T05:12:30Z`）
 - ローカル表示用: `YYYY-MM-DDTHH:mm:ss+09:00`（例: `2026-02-28T14:12:30+09:00`）
 - トレーニング実施データ（`GymVisit.startedAtUtc` / `GymVisit.endedAtUtc` / `ExerciseEntry.performedAtUtc`）は必ずRFC3339 UTCで保存する。
-- API入力でオフセット付き日時を受け取った場合、サーバー側でUTCへ正規化して保存する。
+- 現行実装ではクライアント側でUTCへ正規化して送信し、サーバーは受信値を保存する。
+- API入力でオフセット付き日時を受け取った場合のサーバー側UTC正規化は次フェーズで実装する。
 - `DailyRecord` の日付キーは `timeZoneId` 基準のローカル日付で決定する。
 - AIに渡す時刻コンテキストは `timeZoneId` / `nowUtc` / `nowLocal` を必須にする。
 - AIがDynamoDBの時刻を扱う際は、必ず `timeZoneId` 基準のローカル時刻へ変換してから日付判定・助言を行うこと。
@@ -473,17 +477,18 @@
 ### 7.7 クエリ上限・ページング規約（コスト制御）
 
 - `scan` は禁止（全API/全Lambda）。
-- 日付範囲Queryは必ず上限を設ける。
-- `GET /calendar?month=YYYY-MM` は対象月のみ（最大31日）。
-- `GET /gym-visits?from&to` は `to-from <= 31日` を上限とする。
-- `GET /training-session-view?date=YYYY-MM-DD` は対象日1日分のみ取得する。
-- AI用途の履歴取得は `days <= 90` かつ `limit <= 100` を上限とする。
-- 一覧系APIは `limit` と `nextToken`（または `lastEvaluatedKey`）でページング可能にする。
-- `GET /training-menu-items` は `limit <= 200` を上限とする。
-- `GET /gym-visits?from&to` は `limit <= 100` を上限とし、ページング必須とする。
-- `GET /daily-records?from&to` は `limit <= 62` を上限とし、ページング必須とする。
-- AIチャット履歴取得（AP-19/AP-20）は `limit <= 100` を上限とし、ページング必須とする。
-- 1リクエストで返す最大件数（既定）:
+- 現行実装:
+- `GET /training-menu-items` は `limit <= 200`（既定100）を適用し、`nextToken` でページングする。
+- `GET /gym-visits` は `limit <= 200`（既定100）を適用する（`nextToken` 未実装）。
+- `GET /daily-records?from&to` は範囲Queryを実行する（`limit/nextToken` 未実装）。
+- `GET /calendar?month=YYYY-MM` は対象月のみ（最大31日）を取得する。
+- `GET /training-session-view?date=YYYY-MM-DD` は対象日をキーに1日分を取得する。
+- 次フェーズの目標:
+- `GET /gym-visits` の `nextToken` ページング対応
+- `GET /daily-records` の `limit/nextToken` 対応
+- `from/to` の最大日数バリデーション（31日上限など）
+- AI用途履歴APIの `days` / `limit` 上限制御
+- 目標とする1リクエスト最大件数（将来）:
 - `trainingMenuItems`: 100件
 - `gymVisits`: 50件
 - `exerciseEntries`: 100件
@@ -546,6 +551,7 @@
 - セット詳細入力はオプション表示（初期非表示）とすること。
 - 途中入力はリロード後も復元されること（ドラフト保存）。
 - 「記録して終了」を押した時のみ正式記録すること。
+- `Daily` は入力後3秒で自動保存し、保存ボタンで即時保存もできること。
 - 画面は時刻を `timeZoneId` 基準でローカライズ表示し、`timeZoneId` 文字列の常時表示は不要とする。
 - `/ai-chat` でAIキャラクターアイコンと名前を表示し、発話主体が視覚的に分かること。
 - iPhoneで「ホーム画面に追加」した場合、ブラウザUIのない standalone 表示で起動できること。

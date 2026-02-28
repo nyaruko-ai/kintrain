@@ -1,9 +1,9 @@
 # KinTrain
 
-ジムでの筋トレ記録を「空いているマシン優先」で継続するためのWebアプリです。  
-トレーニング実績、Daily記録、カレンダー参照、AIコーチ相談UIを1つにまとめています。
+空いているマシン優先で筋トレを継続するための記録アプリです。  
+トレーニング実施、Daily記録、カレンダー確認、AIコーチチャットUIを提供します。
 
-## 現在の実装状況（2026-02-28）
+## 実装状況
 
 - フロントエンド: 実装済み（React + Vite + TypeScript）
 - 認証: 実装済み（Amazon Cognito / アクセストークン認可）
@@ -11,7 +11,7 @@
 - DynamoDB: 実装済み（モデル別テーブル）
 - AI Runtime/Gateway/Memory: 設計済み、未実装
 
-## 実装済み機能
+## 主な機能
 
 - ログイン / ログアウト
 - 初回ログイン時の新パスワード設定、パスワード再設定
@@ -22,19 +22,20 @@
   - 「前回と同じ」「入力クリア」
 - トレーニングメニュー管理
   - 追加・更新・削除・並び替え
-  - 回数レンジ（`defaultRepsMin/defaultRepsMax`）対応
+  - 回数レンジ（`defaultRepsMin/defaultRepsMax`）
 - Daily記録
   - 体重・体脂肪率・測定時刻
   - 体調（5段階）・コメント・日記・その他運動
-- カレンダー表示（月次、実施日/体調アイコン）
-- AIチャット画面（キャラクター表示つき、モックストリーミング）
+  - 自動保存（3秒デバウンス）+ 明示保存ボタン
+- カレンダー表示（月次、実施日/体調アイコン、当日ハイライト）
+- AIチャットUI（キャラクター表示つき、モックストリーミング）
 - iPhoneホーム画面追加対応（PWA manifest / standalone起動メタタグ）
 
 注記:
-- AIチャットは現時点でモック応答です。
-- AIキャラクター設定はUI上で反映されます（AgentCore連携は未実装）。
+- AIチャット応答は現時点でモックです。
+- AIキャラクター設定API（`/ai-character-profile`）は実装済みですが、UIは現在ローカル反映のみです。
 
-## 実装済みバックエンド構成
+## バックエンド構成
 
 - IaC: `amplify/backend.ts`（Amplify Gen2 + CDK）
 - 認証: Cognito User Pool / App Client
@@ -53,12 +54,6 @@
   - `KinTrainGoalV2`
   - `KinTrainAiSettingV2`
 
-## フロントエンド配信
-
-- 現行運用: S3バケットへ `frontend/dist` を同期して配信
-  - バケット: `kintrain-web-335723620954-ap-northeast-1`
-- 将来方針: Amplify Gen2 Fullstack Branch Deployment へ統合
-
 ## ローカル実行
 
 ```bash
@@ -66,32 +61,55 @@ npm install
 npm run frontend:dev
 ```
 
-ビルド:
+## 利用者向けAWSデプロイ手順
+
+### 1. 前提
+
+- AWSアカウントとデプロイ権限（Cognito/API Gateway/Lambda/DynamoDB/S3）
+- Node.js 20+ / npm 10+
+- AWS CLI v2
+
+### 2. 依存関係インストール
+
+```bash
+cd /path/to/KinTrain
+npm install
+```
+
+### 3. AWS認証確認
+
+```bash
+aws sts get-caller-identity
+```
+
+### 4. バックエンド反映（Amplify Gen2 Sandbox）
+
+```bash
+npx ampx sandbox --once --identifier <your-identifier>
+npx ampx generate outputs
+cp amplify_outputs.json frontend/src/amplify_outputs.json
+```
+
+### 5. フロントエンドビルド
 
 ```bash
 npm run frontend:build
 ```
 
-バックエンド型チェック:
+### 6. S3へ配信（現行運用）
 
 ```bash
-npm run backend:typecheck
+aws s3 sync frontend/dist s3://<your-frontend-bucket> --delete
 ```
 
-## デプロイ
+補足:
+- 既存環境では `s3://kintrain-web-335723620954-ap-northeast-1` を使用しています。
+- `--delete` はS3側の不要ファイルを削除します。
 
-バックエンド（sandbox）:
+## Amplify Hosting運用（目標）
 
-```bash
-npx ampx sandbox --once --identifier nijot
-```
-
-フロントエンド（S3配信）:
-
-```bash
-npm run frontend:build
-aws s3 sync frontend/dist s3://kintrain-web-335723620954-ap-northeast-1 --delete
-```
+`amplify.yml` は Amplify Gen2 Fullstack Branch Deployment 用に構成済みです。  
+Amplify Console で GitHub 連携すると、1回のブランチデプロイでフロント/バックを同時反映できます。
 
 ## 主要ドキュメント
 

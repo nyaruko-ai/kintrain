@@ -70,9 +70,16 @@ export function SettingsPage() {
             </select>
           </label>
 
-          <label>
+          <label className="birth-date-field">
             生年月日
-            <input type="date" value={profile.birthDate} onChange={(e) => updateUserProfile({ birthDate: e.target.value })} />
+            <span className="birth-date-input-wrap">
+              <input
+                className="birth-date-input"
+                type="date"
+                value={profile.birthDate}
+                onChange={(e) => updateUserProfile({ birthDate: e.target.value })}
+              />
+            </span>
             {ageHint && <small className="muted">{ageHint}</small>}
           </label>
 

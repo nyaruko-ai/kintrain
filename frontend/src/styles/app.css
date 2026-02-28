@@ -173,12 +173,12 @@ a {
   font-weight: 700;
 }
 
-.brand-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #ff7a42, #0e7a73);
-  box-shadow: 0 0 0 4px rgba(14, 122, 115, 0.12);
+.brand-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  object-fit: cover;
+  box-shadow: 0 2px 8px rgba(14, 122, 115, 0.22);
 }
 
 .header-subtitle {
@@ -608,6 +608,62 @@ a {
   -webkit-appearance: none;
   appearance: none;
   background-image: none;
+}
+
+.birth-date-field {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.birth-date-input-wrap {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.birth-date-input-wrap:focus-within {
+  outline: 2px solid rgba(14, 122, 115, 0.45);
+  outline-offset: 2px;
+}
+
+.birth-date-input {
+  border: 0;
+  border-radius: 0;
+  width: 100%;
+  inline-size: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  display: block;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  text-align: left;
+  direction: ltr;
+  background: transparent;
+}
+
+.birth-date-input:focus {
+  outline: none;
+}
+
+.birth-date-input::-webkit-date-and-time-value {
+  text-align: left;
+  width: 100%;
+}
+
+.birth-date-input::-webkit-datetime-edit {
+  text-align: left;
+  padding: 0;
+}
+
+.birth-date-input::-webkit-datetime-edit-fields-wrapper {
+  justify-content: flex-start;
 }
 
 @media (max-width: 760px) {

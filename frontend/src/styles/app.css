@@ -60,7 +60,12 @@ p {
 
 input,
 select,
-textarea,
+textarea {
+  font-family: inherit;
+  line-height: inherit;
+  font-size: max(16px, 1em);
+}
+
 button {
   font: inherit;
 }

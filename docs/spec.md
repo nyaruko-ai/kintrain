@@ -16,12 +16,24 @@
 ## 3. システム構成要件
 
 - Frontend: Web SPA
-- 配信: Amazon S3（本番配信はCloudFront併用）
+- 配信: AWS Amplify Hosting（マネージドCloudFront + S3）
 - 認証: Amazon Cognito
 - API: Amazon API Gateway + AWS Lambda
 - データ保存: Amazon DynamoDB
 - AI: Amazon Bedrock AgentCore Runtime + AgentCore Gateway（MCP）
-- IaC: AWS CDK（TypeScript）
+- IaC: Amplify Gen2（TypeScript）+ AWS CDKカスタムリソース
+- CI/CD: Amplify Gen2 Fullstack Branch Deployments
+
+### 3.1 デプロイ方式（フロント/バック一括反映）
+
+- 標準デプロイ方式は Amplify Gen2 の Fullstack Branch Deployment とする。
+- `main` / `dev` / `staging`（必要に応じて `feature/*`）をフルスタックブランチとして運用する。
+- 1回のブランチデプロイ（Git push起点）で、以下を同時に反映すること。
+- バックエンド（Cognito / API Gateway / Lambda / DynamoDB / AgentCore関連リソース）
+- フロントエンド（SPAビルド成果物のHosting反映）
+- バックエンド拡張リソースは Amplify Gen2 の `backend.createStack()`（CDK）で管理すること。
+- デプロイ単位はブランチ単位とし、フロントとバックで別タイミングの手動デプロイを標準運用にしないこと。
+- 将来 custom pipeline を採用する場合でも、最終的に1回のパイプライン実行でフロント/バックが反映される設計を維持すること。
 
 ## 4. ドメイン定義（ユビキタス言語）
 
@@ -76,8 +88,10 @@
 
 ### 5.1 認証
 
-- メールアドレス+パスワードでサインアップ/ログインできること。
+- メールアドレス+パスワードでログインできること（MVP）。
 - ログイン済みユーザーのみAPI利用可能であること。
+- ユーザーはログアウトできること。
+- サインアップ/メールアドレス確認は将来機能として扱い、MVPには含めないこと。
 
 ### 5.2 トレーニングメニュー管理
 
@@ -525,6 +539,7 @@
 - トレーニング実施時刻がRFC3339 UTC（秒精度）で保存され、表示/AI利用時に `timeZoneId` 基準へ変換されること。
 - 不正値（重量/回数/セットが0以下）は登録できないこと。
 - 他ユーザーのデータにアクセスできないこと。
+- Amplify Gen2 の1回のブランチデプロイで、フロントエンドとバックエンドが同時に反映されること。
 
 ## 13. 未確定・不足要件（要決定）
 
@@ -577,6 +592,12 @@
 
 ## 15. 参考（公式）
 
+- Amplify Gen2 Fullstack Branch Deployments  
+  https://docs.amplify.aws/react/deploy-and-host/fullstack-branching/branch-deployments/
+- Amplify Gen2 Custom Resources（CDK / `backend.createStack()`）  
+  https://docs.amplify.aws/angular/build-a-backend/add-aws-services/custom-resources/
+- Amplify Gen2 Custom Pipelines（`pipeline-deploy` / `generate outputs`）  
+  https://docs.amplify.aws/nextjs/deploy-and-host/fullstack-branching/custom-pipelines/
 - Bedrock AgentCore GA（2025-10-13）  
   https://aws.amazon.com/about-aws/whats-new/2025/10/amazon-bedrock-agentcore-generally-available/
 - AgentCore Runtime ドキュメント  

@@ -19,6 +19,12 @@
 
 `UI -> AgentCore Runtime (Strands + Bedrock Model) -> AgentCore Gateway (MCP) -> Lambda -> DynamoDB`
 
+### 2.3 デプロイ統合方式
+
+- デプロイ基盤は Amplify Gen2 + CDK とする。
+- Runtime/Gateway/MemoryなどのAI関連AWSリソースは Amplify Gen2 の `backend.createStack()` で管理する。
+- Amplify Gen2 Fullstack Branch Deployment により、1回のブランチデプロイでフロントエンドとバックエンドを同時反映する。
+
 注記:
 - AI用途のAPI Gatewayエンドポイント（例: `/ai/chat`, `/ai/advice`）は作成しない。
 - UIは `AiRuntimeEndpoint` に直接 `InvokeAgentRuntime` を実行する。

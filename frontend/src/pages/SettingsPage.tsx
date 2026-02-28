@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppState } from '../AppState';
+import { useAuth } from '../AuthState';
 import type { TonePreset } from '../types';
 
 const timeZoneCandidates = [
@@ -13,6 +15,8 @@ const timeZoneCandidates = [
 ];
 
 export function SettingsPage() {
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   const { data, updateUserProfile, updateAiCharacterProfile } = useAppState();
   const [userStatus, setUserStatus] = useState('');
   const [aiStatus, setAiStatus] = useState('');
@@ -148,6 +152,22 @@ export function SettingsPage() {
             AI設定を反映
           </button>
           {aiStatus && <p className="status-text">{aiStatus}</p>}
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>アカウント</h2>
+        <div className="row-wrap">
+          <button
+            type="button"
+            className="btn danger"
+            onClick={() => {
+              logout();
+              navigate('/login', { replace: true });
+            }}
+          >
+            ログアウト
+          </button>
         </div>
       </section>
     </div>

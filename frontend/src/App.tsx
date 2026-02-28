@@ -1,9 +1,11 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { useAuth } from './AuthState';
 import { AppLayout } from './components/AppLayout';
 import { AiChatPage } from './pages/AiChatPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { DailyPage } from './pages/DailyPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { LoginPage } from './pages/LoginPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TrainingMenuAiGeneratePage } from './pages/TrainingMenuAiGeneratePage';
 import { TrainingMenuPage } from './pages/TrainingMenuPage';
@@ -18,11 +20,28 @@ function PlaceholderPage({ title }: { title: string }) {
   );
 }
 
+function RequireAuth({ children }: { children: JSX.Element }) {
+  const { isAuthenticated } = useAuth();
+  const location = useLocation();
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+  return children;
+}
+
 export function App() {
+  const { isAuthenticated } = useAuth();
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route element={<AppLayout />}>
+      <Route path="/" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />
+      <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+      <Route
+        element={
+          <RequireAuth>
+            <AppLayout />
+          </RequireAuth>
+        }
+      >
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/training-session" element={<TrainingSessionPage />} />
         <Route path="/training-menu" element={<TrainingMenuPage />} />
@@ -34,7 +53,7 @@ export function App() {
         <Route path="/ai-chat" element={<AiChatPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />
     </Routes>
   );
 }

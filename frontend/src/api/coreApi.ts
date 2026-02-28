@@ -59,6 +59,26 @@ type GymVisitDto = {
   updatedAt: string;
 };
 
+type ListGymVisitsResponse = {
+  items: GymVisitDto[];
+};
+
+type DailyRecordDto = {
+  recordDate?: string;
+  timeZoneId?: string;
+  bodyWeightKg?: number;
+  bodyFatPercent?: number;
+  bodyMetricMeasuredTimeLocal?: string;
+  conditionRating?: 1 | 2 | 3 | 4 | 5;
+  conditionComment?: string;
+  diary?: string;
+  otherActivities?: string[];
+};
+
+type ListDailyRecordsResponse = {
+  items: DailyRecordDto[];
+};
+
 const coreApiEndpoint = (amplifyOutputs as CoreEndpointOutput).custom?.endpoints?.coreApiEndpoint ?? '';
 const baseUrl = coreApiEndpoint.replace(/\/+$/, '');
 
@@ -176,5 +196,52 @@ export async function createGymVisit(input: CreateGymVisitInput): Promise<GymVis
   return coreApiFetch<GymVisitDto>('/gym-visits', {
     method: 'POST',
     body: JSON.stringify(input)
+  });
+}
+
+export async function listGymVisits(params?: { from?: string; to?: string; limit?: number }): Promise<ListGymVisitsResponse> {
+  const search = new URLSearchParams();
+  if (params?.from) {
+    search.set('from', params.from);
+  }
+  if (params?.to) {
+    search.set('to', params.to);
+  }
+  if (typeof params?.limit === 'number' && Number.isFinite(params.limit)) {
+    search.set('limit', String(Math.floor(params.limit)));
+  }
+  const query = search.toString();
+  const path = query ? `/gym-visits?${query}` : '/gym-visits';
+
+  return coreApiFetch<ListGymVisitsResponse>(path, {
+    method: 'GET'
+  });
+}
+
+export async function putDailyRecord(
+  date: string,
+  input: Partial<{
+    bodyWeightKg: number;
+    bodyFatPercent: number;
+    bodyMetricMeasuredTimeLocal: string;
+    timeZoneId: string;
+    conditionRating: 1 | 2 | 3 | 4 | 5;
+    conditionComment: string;
+    diary: string;
+    otherActivities: string[];
+  }>
+): Promise<void> {
+  await coreApiFetch<void>(`/daily-records/${encodeURIComponent(date)}`, {
+    method: 'PUT',
+    body: JSON.stringify(input)
+  });
+}
+
+export async function listDailyRecords(params: { from: string; to: string }): Promise<ListDailyRecordsResponse> {
+  const search = new URLSearchParams();
+  search.set('from', params.from);
+  search.set('to', params.to);
+  return coreApiFetch<ListDailyRecordsResponse>(`/daily-records?${search.toString()}`, {
+    method: 'GET'
   });
 }

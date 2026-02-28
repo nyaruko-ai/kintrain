@@ -29,6 +29,18 @@
 - AI用途のAPI Gatewayエンドポイント（例: `/ai/chat`, `/ai/advice`）は作成しない。
 - UIは `AiRuntimeEndpoint` に直接 `InvokeAgentRuntime` を実行する。
 
+### 2.4 実装ステータス（2026-02-28）
+
+- 実装済み:
+- Core API 側の認証/認可（Cognito access token + scope）
+- AIキャラクター設定API（`GET/PUT /ai-character-profile`）
+- AIチャットUI（モックストリーミング）
+- 未実装:
+- AgentCore Runtime 呼び出し（`AiRuntimeEndpoint`）
+- AgentCore Gateway（MCP）経由のツール実行
+- AgentCore Memory 連携
+- `config/prompts/SOUL.md` / `PERSONA.md` / `system-prompt.ja.txt` のRuntime読込処理
+
 ## 3. 認証・認可方式（必須）
 
 ## 3.1 共通原則

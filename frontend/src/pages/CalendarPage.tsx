@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../AppState';
-import { addMonths, getDaysInMonth, pad2, toYm, weekdayIndex } from '../utils/date';
+import { addMonths, getDaysInMonth, pad2, toYm, toYmd, weekdayIndex } from '../utils/date';
 
 const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -18,6 +18,7 @@ export function CalendarPage() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const currentYm = params.get('month') ?? toYm(new Date());
+  const todayYmd = toYmd(new Date());
 
   const cells = useMemo(() => {
     const [year, month] = currentYm.split('-').map(Number);
@@ -71,13 +72,21 @@ export function CalendarPage() {
               return <div className="calendar-cell empty" key={`empty-${idx}`} />;
             }
             const isTrained = trainedDates.has(cell.ymd);
+            const isToday = cell.ymd === todayYmd;
             const record = data.dailyRecords[cell.ymd];
             const rating = record?.conditionRating;
+            const classes = ['calendar-cell'];
+            if (isTrained) {
+              classes.push('trained');
+            }
+            if (isToday) {
+              classes.push('today');
+            }
 
             return (
               <button
                 type="button"
-                className={isTrained ? 'calendar-cell trained' : 'calendar-cell'}
+                className={classes.join(' ')}
                 key={cell.ymd}
                 onClick={() => navigate(`/daily/${cell.ymd}`)}
               >

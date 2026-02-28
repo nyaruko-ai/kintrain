@@ -13,10 +13,24 @@
 - 対応端末: スマホ/PC（レスポンシブ）
 - 利用形態: オンライン前提
 
+### 2.1 実装ステータス（2026-02-28）
+
+- 実装済み:
+- Cognito認証（ログイン/ログアウト/パスワード再設定）
+- Core API（API Gateway + Lambda分割）とDynamoDB CRUD
+- トレーニングメニュー回数レンジ（`defaultRepsMin/defaultRepsMax`）
+- iPhoneホーム画面追加対応（manifest + standaloneメタタグ）
+- AIチャットUIのモックストリーミング
+- 未実装:
+- AgentCore Runtime / Gateway / Memory の本番接続
+- UIからの `PUT /ai-character-profile` 永続保存連携（現在はローカル反映）
+- `/history` `/progress` の本実装（現状プレースホルダ）
+
 ## 3. システム構成要件
 
 - Frontend: Web SPA
-- 配信: AWS Amplify Hosting（マネージドCloudFront + S3）
+- 配信（現行）: S3静的配信（`aws s3 sync`）
+- 配信（目標）: AWS Amplify Hosting（マネージドCloudFront + S3）
 - 認証: Amazon Cognito
 - API: Amazon API Gateway + AWS Lambda
 - データ保存: Amazon DynamoDB
@@ -217,7 +231,7 @@
 - `GET /training-session-view?date=YYYY-MM-DD`
 - `POST /training-menu-items`
 - `PUT /training-menu-items/{trainingMenuItemId}`
-- `DELETE /training-menu-items/{trainingMenuItemId}`（論理削除）
+- `DELETE /training-menu-items/{trainingMenuItemId}`（物理削除）
 - `PUT /training-menu-items/reorder`
 - `POST /gym-visits`
 - `GET /gym-visits?from=YYYY-MM-DD&to=YYYY-MM-DD`
@@ -240,21 +254,16 @@
 
 ### 6.2 トレーニングメニューAPIデータモデル
 
-- `TrainingMenuItem` レスポンスモデル:
+- `GET /training-menu-items` の `TrainingMenuItem` レスポンスモデル:
 - `trainingMenuItemId: string`
 - `trainingName: string`
 - `defaultWeightKg: number`（小数2桁まで）
 - `defaultRepsMin: number`
 - `defaultRepsMax: number`
+- `defaultReps: number`（後方互換のため任意で返却される場合あり）
 - `defaultSets: number`
 - `displayOrder: number`
 - `isActive: boolean`
-- `lastPerformanceSnapshot`（任意）
-- `lastPerformanceSnapshot.performedAtUtc: RFC3339 UTC`
-- `lastPerformanceSnapshot.weightKg: number`
-- `lastPerformanceSnapshot.reps: number`
-- `lastPerformanceSnapshot.sets: number`
-- `lastPerformanceSnapshot.visitDateLocal: YYYY-MM-DD`
 - `createdAt: RFC3339 UTC`
 - `updatedAt: RFC3339 UTC`
 - `POST /training-menu-items` リクエスト:
@@ -262,12 +271,14 @@
 - `defaultWeightKg`
 - `defaultRepsMin`
 - `defaultRepsMax`
+- `defaultReps`（任意、後方互換）
 - `defaultSets`
 - `PUT /training-menu-items/{trainingMenuItemId}` リクエスト:
 - `trainingName`
 - `defaultWeightKg`
 - `defaultRepsMin`
 - `defaultRepsMax`
+- `defaultReps`（任意、後方互換）
 - `defaultSets`
 - `isActive`（任意）
 - `PUT /training-menu-items/reorder` リクエスト:
@@ -275,6 +286,12 @@
 - `GET /training-session-view?date=YYYY-MM-DD` レスポンス:
 - `items: [{ trainingMenuItemId, trainingName, defaultWeightKg, defaultRepsMin, defaultRepsMax, defaultSets, displayOrder, lastPerformanceSnapshot }]`
 - `todayDoneTrainingMenuItemIds: string[]`
+- `lastPerformanceSnapshot`（任意）:
+- `performedAtUtc: RFC3339 UTC`
+- `weightKg: number`
+- `reps: number`
+- `sets: number`
+- `visitDateLocal: YYYY-MM-DD`
 
 ### 6.3 UIモック項目名とのマッピング
 
@@ -531,16 +548,18 @@
 - 「記録して終了」を押した時のみ正式記録すること。
 - 画面は時刻を `timeZoneId` 基準でローカライズ表示し、`timeZoneId` 文字列の常時表示は不要とする。
 - `/ai-chat` でAIキャラクターアイコンと名前を表示し、発話主体が視覚的に分かること。
+- iPhoneで「ホーム画面に追加」した場合、ブラウザUIのない standalone 表示で起動できること。
 
-## 11. 開発プロセス要件（モックUI先行）
+## 11. 開発プロセス状況（モックUI先行の結果）
 
-- 実装はモックUIから開始すること。
-- フロー:
-- 画面モック作成（APIはモックデータ）
+- モックUI先行フローは完了し、Core API/DynamoDBの本実装へ移行済み。
+- 実施済みフロー:
+- 画面モック作成（UI要件調整）
 - 操作確認・レビュー
 - 要件確定
-- バックエンド実装開始
-- レビュー完了まで本実装（API/Lambda/DynamoDB/AgentCore接続）を開始しないこと。
+- Core API / Lambda / DynamoDB実装
+- 未移行:
+- AgentCore Runtime / Gateway / Memory の本実装（現状は設計段階）
 
 ## 12. 受け入れ基準
 

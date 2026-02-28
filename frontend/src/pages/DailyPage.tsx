@@ -9,8 +9,10 @@ export function DailyPage() {
   const today = useTodayYmd();
   const targetDate = date ?? today;
 
-  const { data, saveDailyRecord, setConditionRating, addOtherActivity, removeOtherActivity } = useAppState();
+  const { data, saveDailyRecord, setConditionRating, addOtherActivity, removeOtherActivity, flushDailyRecord, getDailySaveStatus } =
+    useAppState();
   const [activityInput, setActivityInput] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
 
   const record = data.dailyRecords[targetDate] ?? {
     date: targetDate,
@@ -22,6 +24,8 @@ export function DailyPage() {
     () => data.gymVisits.filter((visit) => visit.date === targetDate),
     [data.gymVisits, targetDate]
   );
+  const visitEntries = useMemo(() => visits.flatMap((visit) => visit.entries), [visits]);
+  const dailySaveStatus = getDailySaveStatus(targetDate);
 
   return (
     <div className="stack-lg">
@@ -37,12 +41,36 @@ export function DailyPage() {
             </Link>
           </div>
         </div>
-        <p className="muted">{ymdToDisplay(targetDate)}</p>
+        <div className="row-between">
+          <p className="muted">{ymdToDisplay(targetDate)}</p>
+          <button
+            type="button"
+            className="btn subtle"
+            disabled={dailySaveStatus.isSaving || !dailySaveStatus.isDirty}
+            onClick={async () => {
+              const result = await flushDailyRecord(targetDate);
+              setSaveMessage(result.ok ? '保存しました。' : result.message ?? '保存に失敗しました。');
+            }}
+          >
+            保存
+          </button>
+        </div>
+        <p className="muted">
+          {dailySaveStatus.isSaving
+            ? '保存中...'
+            : dailySaveStatus.error
+              ? `保存エラー: ${dailySaveStatus.error}`
+              : dailySaveStatus.lastSavedAtLocal
+                ? `最終保存: ${dailySaveStatus.lastSavedAtLocal.replace('T', ' ').slice(11, 16)}`
+                : '未保存'}
+          {!dailySaveStatus.isSaving && dailySaveStatus.isDirty ? '（未保存の変更あり）' : ''}
+        </p>
+        {saveMessage && <p className="status-text">{saveMessage}</p>}
       </section>
 
       <section className="card">
         <h2>体重・体脂肪率</h2>
-        <div className="input-grid">
+        <div className="input-grid body-metrics-grid">
           <label>
             体重 (kg)
             <input
@@ -71,7 +99,7 @@ export function DailyPage() {
               }
             />
           </label>
-          <label>
+          <label className="body-time-field">
             測定時刻
             <input
               type="time"
@@ -84,7 +112,6 @@ export function DailyPage() {
             />
           </label>
         </div>
-        <p className="muted">測定時刻: {record.bodyMetricMeasuredTime ?? '未記録'}</p>
       </section>
 
       <section className="card">
@@ -139,21 +166,16 @@ export function DailyPage() {
 
       <section className="card">
         <h2>当日の筋トレ内容</h2>
-        {visits.length === 0 ? (
+        {visitEntries.length === 0 ? (
           <p className="muted">この日の筋トレ記録はまだありません。</p>
         ) : (
-          visits.map((visit) => (
-            <div className="visit-summary" key={visit.id}>
-              <p className="muted">{visit.startedAtLocal.replace('T', ' ').slice(11, 16)} - {visit.endedAtLocal.replace('T', ' ').slice(11, 16)}</p>
-              <ul className="simple-list">
-                {visit.entries.map((entry) => (
-                  <li key={entry.id}>
-                    {entry.trainingName} {entry.weightKg}kg x {entry.reps}回 x {entry.sets}set
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))
+          <ol className="simple-list numbered-list">
+            {visitEntries.map((entry) => (
+              <li key={entry.id}>
+                {entry.trainingName} {entry.weightKg}kg x {entry.reps}回 x {entry.sets}set
+              </li>
+            ))}
+          </ol>
         )}
       </section>
     </div>

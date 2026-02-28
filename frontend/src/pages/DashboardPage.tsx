@@ -38,13 +38,13 @@ export function DashboardPage() {
           {latestVisit ? (
             <>
               <p className="muted">{ymdToDisplay(latestVisit.date)}</p>
-              <ul className="simple-list">
+              <ol className="simple-list numbered-list">
                 {latestVisit.entries.slice(0, 4).map((entry) => (
                   <li key={entry.id}>
                     {entry.trainingName} {entry.weightKg}kg x {entry.reps}回 x {entry.sets}set
                   </li>
                 ))}
-              </ul>
+              </ol>
               <Link to="/calendar" className="text-link">
                 カレンダーで確認
               </Link>

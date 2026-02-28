@@ -1,10 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createGymVisit,
   createTrainingMenuItem,
   deleteTrainingMenuItem as deleteTrainingMenuItemApi,
   getProfile,
+  listDailyRecords as listDailyRecordsApi,
+  listGymVisits,
   listTrainingMenuItems,
+  putDailyRecord as putDailyRecordApi,
   putProfile,
   reorderTrainingMenuItems,
   updateTrainingMenuItem as updateTrainingMenuItemApi
@@ -26,6 +29,13 @@ import type {
   UserProfile
 } from './types';
 
+type DailySaveStatus = {
+  isDirty: boolean;
+  isSaving: boolean;
+  lastSavedAtLocal?: string;
+  error?: string;
+};
+
 interface AppStateContextValue {
   data: AppData;
   isCoreDataLoading: boolean;
@@ -40,6 +50,8 @@ interface AppStateContextValue {
   setConditionRating: (date: string, rating: ConditionRating) => void;
   addOtherActivity: (date: string, value: string) => void;
   removeOtherActivity: (date: string, index: number) => void;
+  flushDailyRecord: (date: string) => Promise<{ ok: boolean; message?: string }>;
+  getDailySaveStatus: (date: string) => DailySaveStatus;
   addMenuItem: (item: Omit<TrainingMenuItem, 'id' | 'order' | 'isActive'>) => void;
   updateMenuItem: (itemId: string, patch: Partial<TrainingMenuItem>) => void;
   deleteMenuItem: (itemId: string) => void;
@@ -55,6 +67,13 @@ interface AppStateContextValue {
 }
 
 const AppStateContext = createContext<AppStateContextValue | null>(null);
+
+function getDefaultDailySaveStatus(): DailySaveStatus {
+  return {
+    isDirty: false,
+    isSaving: false
+  };
+}
 
 function ensureDailyRecord(data: AppData, date: string): DailyRecord {
   return (
@@ -221,11 +240,118 @@ function mapRemoteMenuItem(item: {
   };
 }
 
+function utcToLocalIsoWithOffset(utcIso: string): string {
+  const date = new Date(utcIso);
+  if (Number.isNaN(date.getTime())) {
+    return utcIso;
+  }
+  return toLocalIsoWithOffset(date);
+}
+
+function mapRemoteGymVisit(visit: {
+  visitId: string;
+  visitDateLocal: string;
+  startedAtUtc: string;
+  endedAtUtc: string;
+  timeZoneId?: string;
+  entries?: Array<{
+    trainingMenuItemId?: string;
+    trainingNameSnapshot?: string;
+    weightKg?: number;
+    reps?: number;
+    sets?: number;
+  }>;
+}) {
+  const startedDate = new Date(visit.startedAtUtc);
+  const fallbackYmd = toYmd(Number.isNaN(startedDate.getTime()) ? new Date() : startedDate);
+  const date =
+    typeof visit.visitDateLocal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(visit.visitDateLocal)
+      ? visit.visitDateLocal
+      : fallbackYmd;
+
+  const entries: ExerciseEntry[] = (visit.entries ?? []).map((entry, index) => ({
+    id: `${visit.visitId}-entry-${index + 1}`,
+    menuItemId: entry.trainingMenuItemId ?? '',
+    trainingName: entry.trainingNameSnapshot ?? '不明トレーニング',
+    weightKg: Number(entry.weightKg ?? 0),
+    reps: Number(entry.reps ?? 0),
+    sets: Number(entry.sets ?? 0)
+  }));
+
+  return {
+    id: visit.visitId,
+    date,
+    startedAtLocal: utcToLocalIsoWithOffset(visit.startedAtUtc),
+    endedAtLocal: utcToLocalIsoWithOffset(visit.endedAtUtc),
+    timeZoneId: visit.timeZoneId ?? 'Asia/Tokyo',
+    entries
+  };
+}
+
+function mapRemoteDailyRecord(
+  item: {
+    recordDate?: string;
+    timeZoneId?: string;
+    bodyWeightKg?: number;
+    bodyFatPercent?: number;
+    bodyMetricMeasuredTimeLocal?: string;
+    conditionRating?: 1 | 2 | 3 | 4 | 5;
+    conditionComment?: string;
+    diary?: string;
+    otherActivities?: string[];
+  },
+  fallbackTimeZoneId: string
+): DailyRecord | null {
+  const date = typeof item.recordDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.recordDate) ? item.recordDate : '';
+  if (!date) {
+    return null;
+  }
+  const rating = item.conditionRating;
+  const normalizedRating =
+    rating === 1 || rating === 2 || rating === 3 || rating === 4 || rating === 5 ? rating : undefined;
+  return {
+    date,
+    timeZoneId: item.timeZoneId ?? fallbackTimeZoneId,
+    bodyWeightKg: typeof item.bodyWeightKg === 'number' ? item.bodyWeightKg : undefined,
+    bodyFatPercent: typeof item.bodyFatPercent === 'number' ? item.bodyFatPercent : undefined,
+    bodyMetricMeasuredTime: normalizeMeasuredTime(item.bodyMetricMeasuredTimeLocal),
+    conditionRating: normalizedRating,
+    conditionComment: typeof item.conditionComment === 'string' ? item.conditionComment : undefined,
+    diary: typeof item.diary === 'string' ? item.diary : undefined,
+    otherActivities: Array.isArray(item.otherActivities) ? item.otherActivities : []
+  };
+}
+
+function toDailyRecordPayload(record: DailyRecord): {
+  bodyWeightKg?: number;
+  bodyFatPercent?: number;
+  bodyMetricMeasuredTimeLocal?: string;
+  timeZoneId: string;
+  conditionRating?: 1 | 2 | 3 | 4 | 5;
+  conditionComment?: string;
+  diary?: string;
+  otherActivities: string[];
+} {
+  return {
+    bodyWeightKg: record.bodyWeightKg,
+    bodyFatPercent: record.bodyFatPercent,
+    bodyMetricMeasuredTimeLocal: record.bodyMetricMeasuredTime,
+    timeZoneId: record.timeZoneId,
+    conditionRating: record.conditionRating,
+    conditionComment: record.conditionComment,
+    diary: record.diary,
+    otherActivities: record.otherActivities
+  };
+}
+
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   const [data, setData] = useState<AppData>(() => normalizeAppData(loadFromStorage(initialAppData)));
   const [isCoreDataLoading, setIsCoreDataLoading] = useState(false);
   const [coreDataError, setCoreDataError] = useState('');
+  const [dailySaveStatusByDate, setDailySaveStatusByDate] = useState<Record<string, DailySaveStatus>>({});
+  const dailyPersistTimerRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const pendingDailyRecordRef = useRef<Record<string, DailyRecord>>({});
 
   useEffect(() => {
     saveToStorage(data);
@@ -237,18 +363,39 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
     setIsCoreDataLoading(true);
     try {
-      const [profile, menu] = await Promise.all([getProfile(), listTrainingMenuItems()]);
+      const [profile, menu, visits, dailyRecordsResponse] = await Promise.all([
+        getProfile(),
+        listTrainingMenuItems(),
+        listGymVisits({ limit: 200 }),
+        listDailyRecordsApi({ from: '1970-01-01', to: '2100-12-31' })
+      ]);
       const menuItems = menu.items
         .filter((item) => item.isActive)
         .map((item) => mapRemoteMenuItem(item))
         .sort((a, b) => a.order - b.order);
+      const gymVisits = visits.items
+        .map((item) => mapRemoteGymVisit(item))
+        .sort((a, b) => a.startedAtLocal.localeCompare(b.startedAtLocal));
+      const remoteDailyEntries = dailyRecordsResponse.items
+        .map((item) => mapRemoteDailyRecord(item, profile.timeZoneId))
+        .filter((item): item is DailyRecord => item !== null);
+      const remoteDailyRecordMap = Object.fromEntries(remoteDailyEntries.map((item) => [item.date, item]));
       setData((prev) => ({
         ...prev,
         userProfile: {
           ...prev.userProfile,
           ...profile
         },
-        menuItems
+        menuItems,
+        gymVisits,
+        dailyRecords: {
+          ...prev.dailyRecords,
+          ...Object.fromEntries(
+            Object.entries(remoteDailyRecordMap).filter(([date]) => {
+              return !(dailySaveStatusByDate[date]?.isDirty ?? false);
+            })
+          )
+        }
       }));
       setCoreDataError('');
     } catch (error) {
@@ -256,7 +403,93 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsCoreDataLoading(false);
     }
-  }, [isAuthenticated]);
+  }, [dailySaveStatusByDate, isAuthenticated]);
+
+  const persistDailyRecordNow = useCallback(
+    async (date: string, record: DailyRecord): Promise<{ ok: boolean; message?: string }> => {
+      if (!isAuthenticated) {
+        return { ok: false, message: 'ログイン後に保存してください。' };
+      }
+      setDailySaveStatusByDate((prev) => ({
+        ...prev,
+        [date]: {
+          ...(prev[date] ?? getDefaultDailySaveStatus()),
+          isSaving: true,
+          error: undefined
+        }
+      }));
+      try {
+        await putDailyRecordApi(date, toDailyRecordPayload(record));
+        setCoreDataError('');
+        setDailySaveStatusByDate((prev) => ({
+          ...prev,
+          [date]: {
+            ...(prev[date] ?? getDefaultDailySaveStatus()),
+            isDirty: false,
+            isSaving: false,
+            error: undefined,
+            lastSavedAtLocal: toLocalIsoWithOffset(new Date())
+          }
+        }));
+        return { ok: true };
+      } catch (error) {
+        const message = toErrorMessage(error, 'Daily記録の保存に失敗しました。');
+        setCoreDataError(message);
+        setDailySaveStatusByDate((prev) => ({
+          ...prev,
+          [date]: {
+            ...(prev[date] ?? getDefaultDailySaveStatus()),
+            isDirty: true,
+            isSaving: false,
+            error: message
+          }
+        }));
+        return { ok: false, message };
+      }
+    },
+    [isAuthenticated]
+  );
+
+  const scheduleDailyRecordPersist = useCallback(
+    (date: string, record: DailyRecord) => {
+      if (!isAuthenticated) {
+        return;
+      }
+      pendingDailyRecordRef.current[date] = record;
+      setDailySaveStatusByDate((prev) => ({
+        ...prev,
+        [date]: {
+          ...(prev[date] ?? getDefaultDailySaveStatus()),
+          isDirty: true,
+          error: undefined
+        }
+      }));
+
+      const previous = dailyPersistTimerRef.current[date];
+      if (previous) {
+        clearTimeout(previous);
+      }
+
+      dailyPersistTimerRef.current[date] = setTimeout(() => {
+        const latest = pendingDailyRecordRef.current[date];
+        if (!latest) {
+          return;
+        }
+        delete pendingDailyRecordRef.current[date];
+        delete dailyPersistTimerRef.current[date];
+        void persistDailyRecordNow(date, latest);
+      }, 3000);
+    },
+    [isAuthenticated, persistDailyRecordNow]
+  );
+
+  useEffect(() => {
+    return () => {
+      Object.values(dailyPersistTimerRef.current).forEach((timerId) => clearTimeout(timerId));
+      dailyPersistTimerRef.current = {};
+      pendingDailyRecordRef.current = {};
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -458,32 +691,48 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         }
       },
       saveDailyRecord: (date, patch) => {
+        const current = ensureDailyRecord(data, date);
+        const nextRecord: DailyRecord = {
+          ...current,
+          ...patch,
+          date,
+          timeZoneId: data.userProfile.timeZoneId,
+          otherActivities: patch.otherActivities ?? current.otherActivities
+        };
         setData((prev) => {
-          const current = ensureDailyRecord(prev, date);
+          const prevCurrent = ensureDailyRecord(prev, date);
           return {
             ...prev,
             dailyRecords: {
               ...prev.dailyRecords,
               [date]: {
-                ...current,
+                ...prevCurrent,
                 ...patch,
                 date,
                 timeZoneId: prev.userProfile.timeZoneId,
-                otherActivities: patch.otherActivities ?? current.otherActivities
+                otherActivities: patch.otherActivities ?? prevCurrent.otherActivities
               }
             }
           };
         });
+        void scheduleDailyRecordPersist(date, nextRecord);
       },
       setConditionRating: (date, rating) => {
+        const current = ensureDailyRecord(data, date);
+        const nextRecord: DailyRecord = {
+          ...current,
+          conditionRating: rating,
+          date,
+          timeZoneId: data.userProfile.timeZoneId
+        };
         setData((prev) => {
-          const current = ensureDailyRecord(prev, date);
+          const prevCurrent = ensureDailyRecord(prev, date);
           return {
             ...prev,
             dailyRecords: {
               ...prev.dailyRecords,
               [date]: {
-                ...current,
+                ...prevCurrent,
                 conditionRating: rating,
                 date,
                 timeZoneId: prev.userProfile.timeZoneId
@@ -491,39 +740,80 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             }
           };
         });
+        void scheduleDailyRecordPersist(date, nextRecord);
       },
       addOtherActivity: (date, value) => {
         if (!value.trim()) {
           return;
         }
+        const current = ensureDailyRecord(data, date);
+        const nextRecord: DailyRecord = {
+          ...current,
+          otherActivities: [...current.otherActivities, value.trim()]
+        };
         setData((prev) => {
-          const current = ensureDailyRecord(prev, date);
+          const prevCurrent = ensureDailyRecord(prev, date);
           return {
             ...prev,
             dailyRecords: {
               ...prev.dailyRecords,
               [date]: {
-                ...current,
-                otherActivities: [...current.otherActivities, value.trim()]
+                ...prevCurrent,
+                otherActivities: [...prevCurrent.otherActivities, value.trim()]
               }
             }
           };
         });
+        void scheduleDailyRecordPersist(date, nextRecord);
       },
       removeOtherActivity: (date, index) => {
+        const current = ensureDailyRecord(data, date);
+        const nextRecord: DailyRecord = {
+          ...current,
+          otherActivities: current.otherActivities.filter((_, i) => i !== index)
+        };
         setData((prev) => {
-          const current = ensureDailyRecord(prev, date);
+          const prevCurrent = ensureDailyRecord(prev, date);
           return {
             ...prev,
             dailyRecords: {
               ...prev.dailyRecords,
               [date]: {
-                ...current,
-                otherActivities: current.otherActivities.filter((_, i) => i !== index)
+                ...prevCurrent,
+                otherActivities: prevCurrent.otherActivities.filter((_, i) => i !== index)
               }
             }
           };
         });
+        void scheduleDailyRecordPersist(date, nextRecord);
+      },
+      flushDailyRecord: async (date) => {
+        if (!isAuthenticated) {
+          return { ok: false, message: 'ログイン後に保存してください。' };
+        }
+
+        const timer = dailyPersistTimerRef.current[date];
+        if (timer) {
+          clearTimeout(timer);
+          delete dailyPersistTimerRef.current[date];
+        }
+
+        const latest = pendingDailyRecordRef.current[date] ?? ensureDailyRecord(data, date);
+        delete pendingDailyRecordRef.current[date];
+
+        setDailySaveStatusByDate((prev) => ({
+          ...prev,
+          [date]: {
+            ...(prev[date] ?? getDefaultDailySaveStatus()),
+            isDirty: true,
+            error: undefined
+          }
+        }));
+
+        return persistDailyRecordNow(date, latest);
+      },
+      getDailySaveStatus: (date) => {
+        return dailySaveStatusByDate[date] ?? getDefaultDailySaveStatus();
       },
       addMenuItem: (item) => {
         if (!isAuthenticated) {
@@ -788,7 +1078,16 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         });
       }
     };
-  }, [coreDataError, data, isAuthenticated, isCoreDataLoading, refreshCoreData]);
+  }, [
+    coreDataError,
+    dailySaveStatusByDate,
+    data,
+    isAuthenticated,
+    isCoreDataLoading,
+    persistDailyRecordNow,
+    refreshCoreData,
+    scheduleDailyRecordPersist
+  ]);
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }

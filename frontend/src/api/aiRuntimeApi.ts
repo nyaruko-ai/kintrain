@@ -2,9 +2,13 @@ import { fetchAuthSession } from "aws-amplify/auth";
 import amplifyOutputs from "../amplify_outputs.json";
 
 type RuntimeEndpointOutput = {
+  auth?: {
+    aws_region?: string;
+  };
   custom?: {
     endpoints?: {
       aiRuntimeEndpoint?: string;
+      aiRuntimeEndpointArn?: string;
     };
   };
 };
@@ -32,8 +36,50 @@ export type InvokeAiRuntimeInput = {
   characterName: string;
 };
 
-const aiRuntimeEndpoint =
-  ((amplifyOutputs as RuntimeEndpointOutput).custom?.endpoints?.aiRuntimeEndpoint ?? "").replace(/\/+$/, "");
+type RuntimeInvokeConfig = {
+  invokeUrl: string;
+  baseEndpoint?: string;
+  runtimeArn?: string;
+  qualifier?: string;
+};
+
+function resolveRuntimeInvokeConfig(): RuntimeInvokeConfig | null {
+  const output = amplifyOutputs as RuntimeEndpointOutput;
+  const aiRuntimeEndpoint = (output.custom?.endpoints?.aiRuntimeEndpoint ?? "").trim();
+  if (aiRuntimeEndpoint.length > 0) {
+    const endpoint = aiRuntimeEndpoint.replace(/\/+$/, "");
+    return {
+      invokeUrl: `${endpoint}/invocations`,
+      baseEndpoint: endpoint
+    };
+  }
+
+  const runtimeEndpointArn = (output.custom?.endpoints?.aiRuntimeEndpointArn ?? "").trim();
+  const region = output.auth?.aws_region;
+  if (!runtimeEndpointArn || !region) {
+    return null;
+  }
+
+  const endpointToken = "/runtime-endpoint/";
+  const splitIndex = runtimeEndpointArn.indexOf(endpointToken);
+  const runtimeArn = splitIndex >= 0 ? runtimeEndpointArn.slice(0, splitIndex) : runtimeEndpointArn;
+  const qualifier = splitIndex >= 0 ? runtimeEndpointArn.slice(splitIndex + endpointToken.length) : "DEFAULT";
+  if (!runtimeArn) {
+    return null;
+  }
+
+  const encodedRuntimeArn = encodeURIComponent(runtimeArn);
+  const encodedQualifier = encodeURIComponent(qualifier || "DEFAULT");
+  const baseEndpoint = `https://bedrock-agentcore.${region}.amazonaws.com/runtimes/${encodedRuntimeArn}`;
+  return {
+    invokeUrl: `${baseEndpoint}/invocations?qualifier=${encodedQualifier}`,
+    baseEndpoint,
+    runtimeArn,
+    qualifier
+  };
+}
+
+const runtimeInvokeConfig = resolveRuntimeInvokeConfig();
 
 function getAiRuntimeAccessToken(session: Awaited<ReturnType<typeof fetchAuthSession>>): string {
   const token = session.tokens?.accessToken?.toString();
@@ -44,7 +90,7 @@ function getAiRuntimeAccessToken(session: Awaited<ReturnType<typeof fetchAuthSes
 }
 
 export function isAiRuntimeConfigured(): boolean {
-  return aiRuntimeEndpoint.length > 0;
+  return runtimeInvokeConfig !== null;
 }
 
 function parseSseEvent(raw: string): { eventName: string; data: string } | null {
@@ -149,16 +195,17 @@ export async function invokeAiRuntimeStream(
   input: InvokeAiRuntimeInput,
   onEvent: (event: AiRuntimeStreamEvent) => void
 ): Promise<{ runtimeSessionId?: string }> {
-  if (!aiRuntimeEndpoint) {
+  if (!runtimeInvokeConfig) {
     throw new Error("AI runtime endpoint is not configured.");
   }
 
   const session = await fetchAuthSession();
   const accessToken = getAiRuntimeAccessToken(session);
-  const response = await fetch(`${aiRuntimeEndpoint}/invocations`, {
+  const response = await fetch(runtimeInvokeConfig.invokeUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json; charset=utf-8",
+      Accept: "text/event-stream",
       Authorization: `Bearer ${accessToken}`
     },
     body: JSON.stringify({

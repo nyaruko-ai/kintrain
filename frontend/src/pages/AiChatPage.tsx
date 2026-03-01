@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState } from '../AppState';
+import { invokeAiRuntimeStream, isAiRuntimeConfigured } from '../api/aiRuntimeApi';
+import { useAuth } from '../AuthState';
 import type { TonePreset } from '../types';
 
 function buildMockAdvice(input: string, tone: TonePreset): string {
@@ -20,8 +22,10 @@ function buildMockAdvice(input: string, tone: TonePreset): string {
 }
 
 export function AiChatPage() {
+  const { isAuthenticated } = useAuth();
   const {
     data,
+    restartActiveAiChatSession,
     appendUserMessage,
     createAssistantMessage,
     appendAssistantChunk,
@@ -30,11 +34,21 @@ export function AiChatPage() {
 
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [statusEvents, setStatusEvents] = useState<Array<{ id: string; status: string; message: string }>>([]);
 
   const session = useMemo(
     () => data.aiChatSessions.find((s) => s.id === data.activeAiChatSessionId) ?? data.aiChatSessions[0],
     [data.aiChatSessions, data.activeAiChatSessionId]
   );
+  const latestAssistantMessageId = useMemo(() => {
+    for (let index = session.messages.length - 1; index >= 0; index -= 1) {
+      if (session.messages[index].role === 'assistant') {
+        return session.messages[index].id;
+      }
+    }
+    return undefined;
+  }, [session.messages]);
+  const latestStatusEvent = statusEvents.length > 0 ? statusEvents[statusEvents.length - 1] : undefined;
 
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -43,12 +57,47 @@ export function AiChatPage() {
       return;
     }
     listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [session.messages.length, isStreaming]);
+  }, [session.messages.length, isStreaming, statusEvents.length]);
 
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
+  function appendStatus(status: string, message: string) {
+    setStatusEvents((prev) => {
+      const next = [
+        ...prev,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          status,
+          message
+        }
+      ];
+      return next.slice(-8);
+    });
+  }
+
+  async function streamMockResponse(messageId: string, inputText: string): Promise<void> {
+    appendStatus('status', 'Runtime未接続のためモック応答を使用します。');
+    const full = buildMockAdvice(inputText, data.aiCharacterProfile.tonePreset);
+    const chunks = full.match(/.{1,18}/g) ?? [full];
+
+    await new Promise<void>((resolve) => {
+      let cursor = 0;
+      const timer = window.setInterval(() => {
+        if (cursor === 0) {
+          setStatusEvents([]);
+        }
+        appendAssistantChunk(messageId, chunks[cursor]);
+        cursor += 1;
+        if (cursor >= chunks.length) {
+          window.clearInterval(timer);
+          resolve();
+        }
+      }, 80);
+    });
+  }
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const text = input.trim();
-    if (!text || isStreaming) {
+    if (!text || isStreaming || !isAuthenticated) {
       return;
     }
 
@@ -56,34 +105,68 @@ export function AiChatPage() {
     appendUserMessage(text);
 
     const messageId = createAssistantMessage();
-    const full = buildMockAdvice(text, data.aiCharacterProfile.tonePreset);
-    const chunks = full.match(/.{1,18}/g) ?? [full];
-
     setIsStreaming(true);
-    let cursor = 0;
-    const timer = window.setInterval(() => {
-      appendAssistantChunk(messageId, chunks[cursor]);
-      cursor += 1;
-      if (cursor >= chunks.length) {
-        window.clearInterval(timer);
-        finalizeAssistantMessage(messageId);
-        setIsStreaming(false);
+    setStatusEvents([]);
+
+    try {
+      if (!isAiRuntimeConfigured()) {
+        await streamMockResponse(messageId, text);
+      } else {
+        appendStatus('status', 'AI Runtimeへ接続しています...');
+        await invokeAiRuntimeStream(
+          {
+            aiChatSessionId: session.id,
+            runtimeSessionId: session.id,
+            userMessage: text,
+            timeZoneId: data.userProfile.timeZoneId,
+            characterName: data.aiCharacterProfile.characterName
+          },
+          (event) => {
+            if (event.type === 'status') {
+              appendStatus(event.status, event.message);
+              return;
+            }
+            if (event.type === 'chunk') {
+              setStatusEvents([]);
+              appendAssistantChunk(messageId, event.chunk);
+              return;
+            }
+            if (event.type === 'done') {
+              setStatusEvents([]);
+            }
+          }
+        );
       }
-    }, 80);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI Runtimeとの通信に失敗しました。';
+      appendStatus('error', message);
+      appendAssistantChunk(messageId, `エラー: ${message}`);
+    } finally {
+      setStatusEvents([]);
+      finalizeAssistantMessage(messageId);
+      setIsStreaming(false);
+    }
+  }
+
+  function onStartNewChat() {
+    if (isStreaming) {
+      return;
+    }
+    setStatusEvents([]);
+    setInput('');
+    restartActiveAiChatSession();
   }
 
   const avatar = data.aiCharacterProfile.avatarImageUrl;
 
   return (
-    <div className="stack-lg">
-      <section className="card chat-header-card">
-        <div className="row-between align-start">
-          <div className="chat-agent-head">
-            <img src={avatar} alt={data.aiCharacterProfile.characterName} className="avatar-large" />
-            <div>
-              <p className="eyebrow">AI コーチ</p>
-              <h1>{data.aiCharacterProfile.characterName}</h1>
-            </div>
+    <div className="stack-lg chat-page">
+      <section className="card chat-header-card chat-header-compact">
+        <div className="chat-agent-head">
+          <img src={avatar} alt={data.aiCharacterProfile.characterName} className="avatar-medium" />
+          <div>
+            <p className="eyebrow">AI コーチ</p>
+            <h2>{data.aiCharacterProfile.characterName}</h2>
           </div>
         </div>
       </section>
@@ -92,13 +175,24 @@ export function AiChatPage() {
         {session.messages.map((message) => {
           const isAssistant = message.role === 'assistant';
           const messageAvatar = data.aiCharacterProfile.avatarImageUrl;
+          const showStatusAboveAssistant =
+            isStreaming && isAssistant && message.id === latestAssistantMessageId && Boolean(latestStatusEvent);
 
           return (
-            <div key={message.id} className={isAssistant ? 'message-row assistant' : 'message-row user'}>
-              {isAssistant && <img src={messageAvatar} alt="ai" className="avatar-small" />}
-              <div className={isAssistant ? 'message-bubble assistant' : 'message-bubble user'}>
-                {isAssistant && <p className="message-name">{data.aiCharacterProfile.characterName}</p>}
-                <p>{message.content || (isStreaming ? '...' : '')}</p>
+            <div key={message.id}>
+              {showStatusAboveAssistant &&
+                latestStatusEvent && (
+                  <div className="chat-status-inline" aria-live="polite">
+                    <span className="chat-status-label">Runtime {latestStatusEvent.status}</span>
+                    <span className="chat-status-text">{latestStatusEvent.message}</span>
+                  </div>
+                )}
+              <div className={isAssistant ? 'message-row assistant' : 'message-row user'}>
+                {isAssistant && <img src={messageAvatar} alt="ai" className="avatar-small" />}
+                <div className={isAssistant ? 'message-bubble assistant' : 'message-bubble user'}>
+                  {isAssistant && <p className="message-name">{data.aiCharacterProfile.characterName}</p>}
+                  <p>{message.content || (isStreaming ? '...' : '')}</p>
+                </div>
               </div>
             </div>
           );
@@ -112,10 +206,20 @@ export function AiChatPage() {
           placeholder="例: 今日ジムが混んでいます。優先順を教えて"
           rows={3}
         />
-        <div className="row-between">
-          <p className="muted">{isStreaming ? '応答中...' : '送信ボタンでメッセージを送信'}</p>
-          <button className="btn primary" type="submit" disabled={isStreaming || !input.trim()}>
-            送信
+        <div className="chat-input-actions">
+          <button className="btn ghost chat-new-session-button" type="button" onClick={onStartNewChat} disabled={isStreaming}>
+            新規チャット
+          </button>
+          <button
+            className="btn primary chat-send-icon-button"
+            type="submit"
+            disabled={isStreaming || !input.trim() || !isAuthenticated}
+            aria-label="送信"
+            title="送信"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3.4 11.1 20 4.2c.7-.3 1.4.4 1.1 1.1l-6.9 16.6c-.3.8-1.5.8-1.8 0l-2.2-6-6-2.2c-.8-.3-.8-1.5 0-1.8Z" />
+            </svg>
           </button>
         </div>
       </form>

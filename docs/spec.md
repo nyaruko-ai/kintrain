@@ -13,7 +13,7 @@
 - 対応端末: スマホ/PC（レスポンシブ）
 - 利用形態: オンライン前提
 
-### 2.1 実装ステータス（2026-02-28）
+### 2.1 実装ステータス（2026-03-01）
 
 - 実装済み:
 - Cognito認証（ログイン/ログアウト/パスワード再設定）
@@ -21,10 +21,13 @@
 - トレーニングメニュー回数レンジ（`defaultRepsMin/defaultRepsMax`）
 - Daily記録の自動保存（3秒デバウンス）+ 明示保存ボタン
 - iPhoneホーム画面追加対応（manifest + standaloneメタタグ）
-- AIチャットUIのモックストリーミング
+- AIチャットUIのSSEストリーミング
 - AIキャラクター設定API（`GET/PUT /ai-character-profile`）
+- AgentCore Runtime 接続（`AiRuntimeEndpoint`）
+- Runtime のプロンプトファイル読込（`SOUL.md` / `PERSONA.md` / `system-prompt.ja.txt`）
+- Runtime の `AgentCoreMemorySessionManager` 連携（`actorId=sub`, `sessionId=chatSessionId`）
 - 未実装:
-- AgentCore Runtime / Gateway / Memory の本番接続
+- AgentCore Gateway（MCP）経由ツール呼び出しの本番連携強化
 - UIからの `PUT /ai-character-profile` 永続保存連携（現在はローカル反映）
 - `bodyMetricMeasuredAtUtc/bodyMetricMeasuredAtLocal` のサーバー自動生成
 - `/history` `/progress` の本実装（現状プレースホルダ）
@@ -80,19 +83,19 @@
 - `AiChatSession`: UI上の1会話スレッドを表すAIチャットセッション（複数ターンで構成）
 - `AiAgentRole`: AIエージェントの機能上の役割名（本アプリでは固定で `AIコーチ`）
 - `AiCharacterProfile`: AIチャット表示用キャラクター設定（キャラクターID・名前・アイコン・口調プリセット）
-- `AgentExecutionSession`: AgentCore Runtime実行セッション
-- `MemorySession`: AgentCore Memory上でイベントを束ねるセッション
+- `ChatSessionId`: UIが払い出し、Runtime `sessionId` と Memory `session_id` に共通で利用する会話セッション識別子
 
 ### 4.1 AIチャットセッションの定義
 
 - `AiChatSession` はユーザーがUIで開始する会話単位である。
 - 1つの `AiChatSession` は、複数のユーザー発話/AI応答ターンを保持する。
-- `AiChatSession` は以下の識別子を関連づける。
-- `aiChatSessionId`（アプリ側会話ID）
-- `runtimeSessionId`（AgentCore Runtimeの会話継続ID）
-- `memorySessionId`（AgentCore Memoryの`sessionId`）
-- `runtimeSessionId` が期限切れした場合でも、同一 `aiChatSessionId` を継続し、新しい `runtimeSessionId` を再関連付けできること。
-- `memorySessionId` は同一 `AiChatSession` 内で固定し、短期記憶イベントを同一会話として蓄積すること。
+- `AiChatSession` は単一の `chatSessionId` を持つ。
+- `chatSessionId` は以下で同一値を使用する。
+- UIアプリの会話スレッドID
+- AgentCore Runtime invoke の `sessionId`
+- AgentCore Memory の `session_id`
+- 画面リロード後も同一 `chatSessionId` を復元し、会話を継続できること。
+- `新規チャット` 操作時のみ新しい `chatSessionId` を払い出し、新規会話を開始すること。
 
 ### 4.2 用語の明確化（UI仕様整合）
 
@@ -204,7 +207,7 @@
 - 記録データと目標値を参照したAdviceを生成できること。
 - ChatThread上で継続相談できること。
 - AiChatSession単位で会話を継続できること。
-- AiChatSessionはRuntimeのセッション期限切れ後も継続できること（必要に応じてRuntimeセッションを再生成）。
+- 会話継続の識別子は `chatSessionId` で統一し、同一会話内ではIDを変更しないこと。
 - AI機能は `AiRuntimeEndpoint`（AgentCore Runtime）経由で提供すること。
 - AIのシステムプロンプトはプログラムへハードコードせず、コードとは別のテキストファイルで管理すること。
 - AI回答は一般的助言のみとし、医療診断は行わないこと。
@@ -521,7 +524,9 @@
 
 - `CoachAgent` をRuntimeに配置し、会話制御と応答生成を行うこと。
 - `CoachAgent` の役割名（表示/設定上の正本）は `AIコーチ` とすること。
-- `AgentExecutionSession` を保持し、会話継続性を提供すること。
+- `chatSessionId` をRuntime `sessionId` として保持し、会話継続性を提供すること。
+- Runtime実装は Strands フレームワーク + Python を採用すること。
+- モデルIDはRuntime環境変数（例: `MODEL_ID`）で切替可能にすること。
 
 ### 9.2 Gateway（MCP）
 
@@ -534,10 +539,14 @@
 - `get_ai_character_profile()`
 - `save_advice_log(advice)`
 - `userId` はツール公開引数に含めず、RuntimeがJWT `sub` を内部注入すること。
+- MCP Lambda はメソッド名を `context.clientContext.custom.bedrockAgentCoreToolName` から判定すること（`event` 起点で判定しない）。
 
 ### 9.3 連携方式
 
 - RuntimeがGateway経由でMCPツールを呼び出し、DynamoDBの記録を参照してAdvice/Chatを生成すること。
+- RuntimeエンドポイントのInbound認可は Cognito アクセストークン（Bearer JWT）を使用すること。
+- Runtimeは受け取ったBearer JWTをGateway呼び出しへリレーし、Gateway側でも同トークンでInbound認可すること。
+- UIのAIチャットはストリーミング表示とし、回答本文に加えて進行状態イベント（例: thinking/tool calling）も表示可能にすること。
 
 ## 10. UI要件
 

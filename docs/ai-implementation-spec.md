@@ -1,6 +1,6 @@
 # KinTrain AI実装仕様（AgentCore Runtime + Gateway）
 
-最終更新日: 2026-02-28
+最終更新日: 2026-03-01
 対象: MVP
 
 ## 1. 目的
@@ -8,6 +8,7 @@
 - AI連携方式を明確化する。
 - 認可を Cognito アクセストークン（JWT）で統一する。
 - UI と Runtime 間チャットをストリーミングで実装する。
+- AgentCore Runtime は Strands + Python で実装し、モデル切替は環境変数で行う。
 
 ## 2. 対象アーキテクチャ
 
@@ -24,22 +25,25 @@
 - デプロイ基盤は Amplify Gen2 + CDK とする。
 - Runtime/Gateway/MemoryなどのAI関連AWSリソースは Amplify Gen2 の `backend.createStack()` で管理する。
 - Amplify Gen2 Fullstack Branch Deployment により、1回のブランチデプロイでフロントエンドとバックエンドを同時反映する。
+- CDK実装言語は TypeScript を採用する（Runtimeアプリ本体は Python）。
+- AgentCore は CDK L2 Construct（alpha）を利用する。
 
 注記:
 - AI用途のAPI Gatewayエンドポイント（例: `/ai/chat`, `/ai/advice`）は作成しない。
 - UIは `AiRuntimeEndpoint` に直接 `InvokeAgentRuntime` を実行する。
 
-### 2.4 実装ステータス（2026-02-28）
+### 2.4 実装ステータス（2026-03-01）
 
 - 実装済み:
 - Core API 側の認証/認可（Cognito access token + scope）
 - AIキャラクター設定API（`GET/PUT /ai-character-profile`）
-- AIチャットUI（モックストリーミング）
+- AgentCore Runtime 呼び出し（`AiRuntimeEndpoint` / SSE）
+- Runtime の `SOUL.md` / `PERSONA.md` / `system-prompt.ja.txt` 読込
+- Runtime の `chatSessionId` 管理（UIと同一IDを `sessionId` に利用）
+- Runtime の `AgentCoreMemorySessionManager` 連携（`actorId=sub`, `sessionId=chatSessionId`）
 - 未実装:
-- AgentCore Runtime 呼び出し（`AiRuntimeEndpoint`）
 - AgentCore Gateway（MCP）経由のツール実行
-- AgentCore Memory 連携
-- `config/prompts/SOUL.md` / `PERSONA.md` / `system-prompt.ja.txt` のRuntime読込処理
+- Memoryを使ったドメイン知識検索結果のプロンプト注入最適化
 
 ## 3. 認証・認可方式（必須）
 
@@ -51,6 +55,7 @@
 - `UI -> API Gateway`
 - `UI -> AgentCore Runtime`
 - `AgentCore Runtime -> AgentCore Gateway`
+- 本書で「アクセスキー」と記載する場合は、AWSアクセスキーではなく Cognito アクセストークン（JWT）を指す。
 
 ## 3.2 UI -> API Gateway
 
@@ -78,6 +83,9 @@
 - Gateway target は Lambda を使用する。
 - credential provider は `GATEWAY_IAM_ROLE` を使用する（Gateway実行ロールでLambda呼び出し）。
 - Lambda のDynamoDBアクセスは最小権限IAMで制限する。
+- Lambda target では、`event` には tool の inputSchema に定義した引数マップが渡され、ツール名は `context` 側に渡される。Inbound認証で使われた `Authorization` ヘッダ値の受け渡しは標準仕様に含まれない。
+- したがって、MVPでは Runtime 側で `sub` を抽出し、`userId` としてツール引数へ注入して利用する。
+- 将来、Gateway Request Interceptor（`passRequestHeaders=true`）で受信ヘッダを扱う方式へ拡張する余地はあるが、Lambda handler で `Authorization` ヘッダを直接参照する設計は採用しない。
 
 ## 3.6 日時コンテキスト（必須）
 
@@ -94,19 +102,20 @@
 
 ### 4.1 AIチャットセッションモデル
 
-- `aiChatSessionId`: UI/アプリ側の会話スレッドID（永続）。
-- `runtimeSessionId`: Runtimeの会話継続ID（期限切れで再発行あり）。
-- `memorySessionId`: Memoryの`sessionId`（同一会話内で固定）。
-- マッピング方針:
-- `aiChatSessionId 1 : N runtimeSessionId`
-- `aiChatSessionId 1 : 1 memorySessionId`
-- `runtimeSessionId` 期限切れ時は、同じ `aiChatSessionId` に新しい `runtimeSessionId` を再関連付けする。
+- `chatSessionId`: UI/アプリ側で生成する会話スレッドID（永続）。
+- セッションIDは1種類に統一し、以下で同じ値を使用する。
+- Runtime invoke の `sessionId`
+- Memory の `session_id`
+- 同一会話中は `chatSessionId` を固定し、`新規チャット` 操作時のみ新しいIDを払い出す。
+- 画面リロード後も同一 `chatSessionId` を復元して会話を継続する。
 
 ### 4.2 MVP採用方式
 
 - `InvokeAgentRuntime` のストリーミング応答（`text/event-stream`）を採用する。
 - UIは `fetch` + `ReadableStream` で逐次描画する。
-- 会話継続は `runtimeSessionId` を再利用する。
+- 会話継続は `chatSessionId`（= Runtime `sessionId`）を再利用する。
+- テキスト本体だけでなく、Runtime内部ステータス（例: `thinking`, `tool_calling`, `tool_succeeded`）もストリームイベントとしてUIへ表示する。
+- 内部ステータスは Runtime 側で明示的にイベント生成し、UIは `message` イベントと `status` イベントを分離描画する。
 
 ### 4.3 将来拡張
 
@@ -121,6 +130,14 @@
 - Runtimeエージェントの役割名（ドメイン上の正本）は `AIコーチ` とする。
 - モデルは BedrockModel を使い、モデルIDは環境変数で切替可能にする。
 - 初期候補は Claude Opus 4.6 系を利用する（利用可能リージョンで有効化）。
+
+### 5.1.1 Runtime環境変数（必須）
+
+- `MODEL_ID`: 利用モデルID（例: `anthropic.claude-opus-4-6-v1`）
+- `AWS_REGION`: Runtime実行リージョン
+- `MCP_GATEWAY_URL`: GatewayのMCPエンドポイント
+- `SOUL_FILE_PATH` / `PERSONA_FILE_PATH` / `SYSTEM_PROMPT_FILE_PATH`
+- `APP_TIMEZONE_DEFAULT`: ユーザー設定未取得時の既定（`Asia/Tokyo`）
 
 ### 5.2 トークン使い回し処理（必須）
 
@@ -167,7 +184,15 @@
 ### 6.2 ツール実体
 
 - 各ツールはLambdaで実装し、DynamoDBを参照/更新する。
-- PKは `USER#{sub}` で固定し、他ユーザー参照を不可能にする。
+- 全テーブルの主キー/GSIは `userId=sub` を必須にし、他ユーザー参照を不可能にする。
+
+### 6.3 MCP Lambdaメソッド判定ルール（必須）
+
+- Lambda handler は、呼び出しツール名を `context.clientContext.custom.bedrockAgentCoreToolName` から取得して分岐する。
+- Pythonランタイムでは同等に `context.client_context.custom["bedrockAgentCoreToolName"]` を参照する。
+- `event` は tool 引数マップであり、メソッド判定には使用しない。
+- 公式仕様上、ツール名は `<target_name>__<tool_name>` 形式（`__` 区切り）であるため、`tool_name` を抽出してディスパッチする。
+- 実装では `split("__", 1)` などで安全に解析し、未知メソッドは `Method not found` を返す。
 
 ## 7. モデル方針
 
@@ -246,7 +271,7 @@
 
 - `memoryId`: 環境ごとに1つ（`kintrain-memory-dev` など）
 - `actorId`: Cognito `sub` を使用
-- `sessionId`: `memorySessionId` を使用（AiChatSession単位）
+- `sessionId`: `chatSessionId` を使用（AiChatSession単位）
 - `eventExpiryDuration`: 90日（短期イベント保持期間）
 
 補足:
@@ -266,8 +291,8 @@
 
 ### 9.4 イベント投入
 
-- 各チャットターンで `CreateEvent` を実行し、会話をMemoryへ送る。
-- `actorId = sub`、`sessionId = memorySessionId` を必須で付与する。
+- Strands 連携では `AgentCoreMemorySessionManager` を使用し、各チャットターンの会話イベントをMemoryへ自動連携する。
+- `actorId = sub`、`sessionId = chatSessionId` を必須で付与する。
 - `payload` はユーザー発話/AI応答を記録する。
 - `eventTimestamp` はRFC3339 UTCでサーバー時刻を使用する。
 - `eventMetadata` に機微情報を入れない。
@@ -308,8 +333,8 @@
 
 1. Cognito User Pool / App Client を作成し、SPA用アクセストークン取得を有効化。
 2. API Gateway に Cognito JWT Authorizer を設定。
-3. AgentCore Runtime を作成し、Inbound JWT authorizer を設定。
-4. Runtimeに `request_header_allowlist = ["Authorization"]` を設定してデプロイ。
+3. AgentCore Runtime を作成し、Inbound JWT authorizer を設定する（CDK L2 Construct）。
+4. Runtimeのリクエストヘッダ許可設定（request header allowlist）に `Authorization` を追加し、Runtimeコードで受け取れるようにする。
 5. AgentCore Gateway を作成し、Inbound JWT authorizer を設定（Runtimeと同じCognito設定）。
 6. Gateway target として Lambda を追加（credentialProviderType=`GATEWAY_IAM_ROLE`）。
 7. Runtimeコードで JWT 受領 -> claims抽出 -> Gateway呼び出しヘッダへ使い回しを実装。
@@ -336,8 +361,9 @@
 - Gatewayも同一Cognito JWTで認証できること。
 - RuntimeからGatewayへの呼び出し時に `Authorization` ヘッダが設定されること（ログで確認）。
 - チャット応答がストリーミング表示されること。
+- チャットUIで `status` 系イベント（内部進行状態）が逐次表示されること。
 - DynamoDB参照が `sub` 単位で分離されること。
-- `CreateEvent` が `actorId/sub` と `memorySessionId` で登録されること。
+- Memoryイベントが `actorId/sub` と `chatSessionId` で登録されること。
 - `RetrieveMemoryRecords` の結果が応答文脈に反映されること。
 - コード変更なしで、プロンプトファイル更新のみで調整できること。
 - 応答ログに `soulFilePath`, `personaFilePath`, `systemPromptFilePath`, `promptGitRevision` が保存されること。
@@ -345,8 +371,9 @@
 - DynamoDB由来のRFC3339 UTC時刻が、推論前に `timeZoneId` ローカル時刻へ変換されていること。
 - `AiCharacterProfile` 変更がチャット口調/表示に反映されること。
 - `AI_CHARACTER_PROFILE` 未設定時に `nyaruko` 既定設定へフォールバックできること。
+- MCP Lambda のメソッド分岐が `context.clientContext.custom.bedrockAgentCoreToolName`（Pythonは `context.client_context.custom["bedrockAgentCoreToolName"]`）基準で行われること。
 
-## 13. 公式ドキュメント根拠（確認日: 2026-02-28）
+## 13. 公式ドキュメント根拠（確認日: 2026-03-01）
 
 - Inbound JWT authorizer（Runtime/Gateway共通）  
   https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/inbound-jwt-authorizer.html
@@ -366,8 +393,14 @@
   https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-agent-integration.html
 - Gateway targetでLambda + `GATEWAY_IAM_ROLE`  
   https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-add-target-api-target-config.html
+- Lambda target input format（`event` 引数マップ / `context.clientContext.custom.bedrockAgentCoreToolName`）  
+  https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-add-target-lambda.html
+- Tool naming format（`<target>__<tool>`）  
+  https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-tool-naming.html
 - Header propagation制約（Authorization allowlist不可/Interceptorで上書き可）  
   https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-headers.html
+- Gateway Request Interceptor（`passRequestHeaders`）  
+  https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-target-request-interceptor.html
 - AgentCore Memory 概要  
   https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html
 - AgentCore Memory の仕組み  
@@ -406,6 +439,8 @@
   https://aws.amazon.com/about-aws/whats-new/2026/2/claude-opus-4.6-available-amazon-bedrock/
 - Claude Opus 4.6 モデルID（Adaptive thinking）  
   https://docs.aws.amazon.com/bedrock/latest/userguide/claude-messages-adaptive-thinking.html
+- AgentCore CDK L2 Construct（alpha）  
+  https://docs.aws.amazon.com/cdk/api/v2/python/aws_cdk.aws_bedrockagentcore_alpha/README.html
 
 ## 14. 補足（公式情報からの推論を含む項目）
 
@@ -413,3 +448,5 @@
 1) RuntimeがAuthorizationヘッダをagent codeへ受け渡せる。  
 2) Gateway呼び出しでAuthorizationヘッダ付きMCP接続が可能。
 - 上記は公式の個別機能を組み合わせた実装方針であり、本仕様ではこの方式を正式採用する。
+- GatewayのLambda target入力仕様からは、Inbound認証で使用したBearerトークンをLambda handlerで直接取得する方法は明示されていない。  
+  このため、本仕様ではRuntimeで `sub` を確定しツール引数へ付与する方式を正とする。

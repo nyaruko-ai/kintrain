@@ -296,12 +296,25 @@ let aiGatewayUrl = "";
 let aiGatewayId = "";
 let aiMemoryId = "";
 
+function toAgentCoreNameSuffix(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "local";
+}
+
 if (enableAgentCoreResources) {
   const agentCoreStack = backend.createStack("agentcore-stack");
   const cognitoDiscoveryUrl = `https://cognito-idp.${Stack.of(agentCoreStack).region}.amazonaws.com/${backend.auth.resources.userPool.userPoolId}/.well-known/openid-configuration`;
+  const branchSuffix = toAgentCoreNameSuffix(process.env.AWS_BRANCH ?? process.env.AMPLIFY_BRANCH ?? "local");
+  const gatewayName = process.env.AI_COACH_GATEWAY_NAME ?? `kintrain-ai-coach-gateway-${branchSuffix}`;
+  const memoryName = process.env.AI_COACH_MEMORY_NAME ?? `kintrain-coach-memory-${branchSuffix}`;
+  const runtimeName = process.env.AI_COACH_RUNTIME_NAME ?? `kintrain-coach-runtime-${branchSuffix}`;
 
   const aiCoachGateway = new agentcore.Gateway(agentCoreStack, "AiCoachGateway", {
-    gatewayName: "kintrain-ai-coach-gateway",
+    gatewayName,
     description: "KinTrain AI coach MCP gateway",
     protocolConfiguration: agentcore.GatewayProtocol.mcp({
       instructions: "Use KinTrain tools to retrieve training records and provide concise coaching advice.",
@@ -325,7 +338,7 @@ if (enableAgentCoreResources) {
   });
 
   const aiCoachMemory = new agentcore.Memory(agentCoreStack, "AiCoachMemory", {
-    memoryName: "kintrainCoachMemory",
+    memoryName,
     description: "KinTrain long-term memory for AI coach conversation context",
     expirationDuration: Duration.days(90),
     memoryStrategies: [
@@ -336,7 +349,7 @@ if (enableAgentCoreResources) {
   });
 
   const aiCoachRuntime = new agentcore.Runtime(agentCoreStack, "AiCoachRuntime", {
-    runtimeName: process.env.AI_COACH_RUNTIME_NAME ?? "kintrainCoachRuntime",
+    runtimeName,
     description: "KinTrain AI coach runtime (Strands / Python)",
     protocolConfiguration: agentcore.ProtocolType.HTTP,
     agentRuntimeArtifact: agentcore.AgentRuntimeArtifact.fromCodeAsset({

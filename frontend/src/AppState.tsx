@@ -25,6 +25,7 @@ import type {
   DraftEntry,
   ExerciseEntry,
   SetDetail,
+  TrainingMenuSet,
   TrainingMenuItem,
   UserProfile
 } from './types';
@@ -52,10 +53,18 @@ interface AppStateContextValue {
   removeOtherActivity: (date: string, index: number) => void;
   flushDailyRecord: (date: string) => Promise<{ ok: boolean; message?: string }>;
   getDailySaveStatus: (date: string) => DailySaveStatus;
-  addMenuItem: (item: Omit<TrainingMenuItem, 'id' | 'order' | 'isActive'>) => void;
+  addMenuItem: (item: Omit<TrainingMenuItem, 'id' | 'order' | 'isActive'>, options?: { targetSetId?: string }) => void;
   updateMenuItem: (itemId: string, patch: Partial<TrainingMenuItem>) => void;
   deleteMenuItem: (itemId: string) => void;
   moveMenuItem: (itemId: string, direction: -1 | 1) => void;
+  createMenuSet: (setName: string) => string | null;
+  renameMenuSet: (setId: string, setName: string) => void;
+  deleteMenuSet: (setId: string) => void;
+  setDefaultMenuSet: (setId: string) => void;
+  setActiveMenuSet: (setId: string) => void;
+  assignMenuItemToSet: (setId: string, itemId: string) => void;
+  unassignMenuItemFromSet: (setId: string, itemId: string) => void;
+  moveMenuItemInSet: (setId: string, itemId: string, direction: -1 | 1) => void;
   replaceMenuItems: (items: TrainingMenuItem[]) => void;
   updateUserProfile: (patch: Partial<UserProfile>) => void;
   saveUserProfile: () => Promise<{ ok: boolean; message?: string }>;
@@ -113,11 +122,80 @@ function normalizeRepsRange(input: {
   };
 }
 
+function createDefaultMenuSet(menuItems: TrainingMenuItem[]): TrainingMenuSet {
+  return {
+    id: 'menu-set-main',
+    setName: 'メインメニュー',
+    order: 1,
+    isDefault: true,
+    isActive: true,
+    itemIds: [...menuItems].sort((a, b) => a.order - b.order).map((item) => item.id)
+  };
+}
+
+function getDefaultMenuSetId(menuSets: TrainingMenuSet[]): string {
+  return menuSets.find((set) => set.isDefault)?.id ?? menuSets[0]?.id ?? '';
+}
+
+function normalizeMenuSets(menuItems: TrainingMenuItem[], rawSets?: TrainingMenuSet[], activeSetId?: string): {
+  menuSets: TrainingMenuSet[];
+  activeTrainingMenuSetId: string;
+} {
+  const validItemIds = new Set(menuItems.map((item) => item.id));
+  const sourceSets = Array.isArray(rawSets) ? rawSets : [];
+
+  const normalized = sourceSets
+    .filter((set) => set && set.isActive !== false)
+    .sort((a, b) => a.order - b.order)
+    .map((set, idx) => {
+      const uniqueItemIds = Array.from(new Set((set.itemIds ?? []).filter((itemId) => validItemIds.has(itemId))));
+      return {
+        id: set.id || `menu-set-${idx + 1}`,
+        setName: (set.setName ?? '').trim() || `メニューセット ${idx + 1}`,
+        order: idx + 1,
+        isDefault: Boolean(set.isDefault),
+        isActive: true,
+        itemIds: uniqueItemIds
+      } as TrainingMenuSet;
+    });
+
+  const menuSets = normalized.length > 0 ? normalized : [createDefaultMenuSet(menuItems)];
+
+  const orphanItemIds = menuItems.map((item) => item.id).filter((itemId) => !menuSets.some((set) => set.itemIds.includes(itemId)));
+
+  const defaultId = getDefaultMenuSetId(menuSets);
+  if (orphanItemIds.length > 0) {
+    const fallbackDefaultId = defaultId || menuSets[0].id;
+    const defaultSetIndex = menuSets.findIndex((set) => set.id === fallbackDefaultId);
+    const targetIndex = defaultSetIndex >= 0 ? defaultSetIndex : 0;
+    menuSets[targetIndex] = {
+      ...menuSets[targetIndex],
+      itemIds: [...menuSets[targetIndex].itemIds, ...orphanItemIds]
+    };
+  }
+
+  const normalizedDefaultId = getDefaultMenuSetId(menuSets) || menuSets[0].id;
+  const withSingleDefault = menuSets.map((set) => ({
+    ...set,
+    isDefault: set.id === normalizedDefaultId
+  }));
+
+  const resolvedActive =
+    (activeSetId && withSingleDefault.some((set) => set.id === activeSetId) ? activeSetId : '') || normalizedDefaultId;
+
+  return {
+    menuSets: withSingleDefault,
+    activeTrainingMenuSetId: resolvedActive
+  };
+}
+
 function normalizeAppData(rawData: AppData): AppData {
   const legacy = rawData as AppData & {
     timeZoneId?: string;
     userProfile?: Partial<UserProfile>;
     menuItems?: Array<TrainingMenuItem & { machineName?: string; defaultReps?: number }>;
+    menuSets?: TrainingMenuSet[];
+    activeTrainingMenuSetId?: string;
     gymVisits?: Array<{
       id: string;
       date: string;
@@ -165,6 +243,7 @@ function normalizeAppData(rawData: AppData): AppData {
     bodyPart: item.bodyPart ?? '',
     ...normalizeRepsRange(item)
   }));
+  const normalizedMenuSetState = normalizeMenuSets(normalizedMenuItems, legacy.menuSets, legacy.activeTrainingMenuSetId);
 
   const sourceGymVisits = (legacy.gymVisits ?? initialAppData.gymVisits) as Array<{
     id: string;
@@ -194,6 +273,8 @@ function normalizeAppData(rawData: AppData): AppData {
     ...legacyWithoutTimeZone,
     userProfile,
     menuItems: normalizedMenuItems,
+    menuSets: normalizedMenuSetState.menuSets,
+    activeTrainingMenuSetId: normalizedMenuSetState.activeTrainingMenuSetId,
     gymVisits: normalizedGymVisits,
     dailyRecords: normalizedDailyRecords,
     aiCharacterProfile: normalizedAiCharacterProfile
@@ -388,21 +469,28 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         .filter((item): item is DailyRecord => item !== null);
       const remoteDailyRecordMap = Object.fromEntries(remoteDailyEntries.map((item) => [item.date, item]));
       setData((prev) => ({
-        ...prev,
-        userProfile: {
-          ...prev.userProfile,
-          ...profile
-        },
-        menuItems,
-        gymVisits,
-        dailyRecords: {
-          ...prev.dailyRecords,
-          ...Object.fromEntries(
-            Object.entries(remoteDailyRecordMap).filter(([date]) => {
-              return !(dailySaveStatusByDate[date]?.isDirty ?? false);
-            })
-          )
-        }
+        ...(() => {
+          const nextMenuSetState = normalizeMenuSets(menuItems, prev.menuSets, prev.activeTrainingMenuSetId);
+          return {
+            ...prev,
+            userProfile: {
+              ...prev.userProfile,
+              ...profile
+            },
+            menuItems,
+            menuSets: nextMenuSetState.menuSets,
+            activeTrainingMenuSetId: nextMenuSetState.activeTrainingMenuSetId,
+            gymVisits,
+            dailyRecords: {
+              ...prev.dailyRecords,
+              ...Object.fromEntries(
+                Object.entries(remoteDailyRecordMap).filter(([date]) => {
+                  return !(dailySaveStatusByDate[date]?.isDirty ?? false);
+                })
+              )
+            }
+          };
+        })()
       }));
       setCoreDataError('');
     } catch (error) {
@@ -824,7 +912,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       getDailySaveStatus: (date) => {
         return dailySaveStatusByDate[date] ?? getDefaultDailySaveStatus();
       },
-      addMenuItem: (item) => {
+      addMenuItem: (item, options) => {
         if (!isAuthenticated) {
           return;
         }
@@ -852,9 +940,27 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           .then((created) => {
             setData((prev) => {
               const withoutDup = prev.menuItems.filter((m) => m.id !== created.trainingMenuItemId);
+              const nextMenuItems = [...withoutDup, mapRemoteMenuItem(created)].sort((a, b) => a.order - b.order);
+              const targetSetId =
+                options?.targetSetId || prev.activeTrainingMenuSetId || getDefaultMenuSetId(prev.menuSets);
+              const menuSets = prev.menuSets.map((set) => {
+                if (set.id !== targetSetId) {
+                  return set;
+                }
+                if (set.itemIds.includes(created.trainingMenuItemId)) {
+                  return set;
+                }
+                return {
+                  ...set,
+                  itemIds: [...set.itemIds, created.trainingMenuItemId]
+                };
+              });
+              const nextMenuSetState = normalizeMenuSets(nextMenuItems, menuSets, prev.activeTrainingMenuSetId);
               return {
                 ...prev,
-                menuItems: [...withoutDup, mapRemoteMenuItem(created)].sort((a, b) => a.order - b.order)
+                menuItems: nextMenuItems,
+                menuSets: nextMenuSetState.menuSets,
+                activeTrainingMenuSetId: nextMenuSetState.activeTrainingMenuSetId
               };
             });
             setCoreDataError('');
@@ -907,10 +1013,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           });
       },
       deleteMenuItem: (itemId) => {
-        setData((prev) => ({
-          ...prev,
-          menuItems: prev.menuItems.filter((item) => item.id !== itemId)
-        }));
+        setData((prev) => {
+          const nextMenuItems = prev.menuItems.filter((item) => item.id !== itemId);
+          const nextMenuSets = prev.menuSets.map((set) => ({
+            ...set,
+            itemIds: set.itemIds.filter((menuItemId) => menuItemId !== itemId)
+          }));
+          const nextMenuSetState = normalizeMenuSets(nextMenuItems, nextMenuSets, prev.activeTrainingMenuSetId);
+          return {
+            ...prev,
+            menuItems: nextMenuItems,
+            menuSets: nextMenuSetState.menuSets,
+            activeTrainingMenuSetId: nextMenuSetState.activeTrainingMenuSetId
+          };
+        });
         if (!isAuthenticated) {
           return;
         }
@@ -949,13 +1065,154 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             void refreshCoreData();
           });
       },
-      replaceMenuItems: (items) => {
+      createMenuSet: (setName) => {
+        const trimmedName = setName.trim();
+        if (!trimmedName) {
+          return null;
+        }
+        const newSetId = id('menu-set');
+        setData((prev) => {
+          const nextOrder = prev.menuSets.length + 1;
+          return {
+            ...prev,
+            menuSets: [
+              ...prev.menuSets,
+              {
+                id: newSetId,
+                setName: trimmedName,
+                order: nextOrder,
+                isDefault: false,
+                isActive: true,
+                itemIds: []
+              }
+            ],
+            activeTrainingMenuSetId: newSetId
+          };
+        });
+        return newSetId;
+      },
+      renameMenuSet: (setId, setName) => {
+        const trimmedName = setName.trim();
+        if (!trimmedName) {
+          return;
+        }
         setData((prev) => ({
           ...prev,
-          menuItems: items
-            .map((item, idx) => ({ ...item, order: idx + 1 }))
-            .sort((a, b) => a.order - b.order)
+          menuSets: prev.menuSets.map((set) => (set.id === setId ? { ...set, setName: trimmedName } : set))
         }));
+      },
+      deleteMenuSet: (setId) => {
+        setData((prev) => {
+          if (prev.menuSets.length <= 1) {
+            return prev;
+          }
+          const target = prev.menuSets.find((set) => set.id === setId);
+          if (!target) {
+            return prev;
+          }
+          const remaining = prev.menuSets
+            .filter((set) => set.id !== setId)
+            .map((set, idx) => ({ ...set, order: idx + 1 }));
+          const nextDefaultId = target.isDefault ? remaining[0]?.id : getDefaultMenuSetId(remaining);
+          const normalized = remaining.map((set) => ({
+            ...set,
+            isDefault: set.id === nextDefaultId
+          }));
+          const nextActiveId =
+            prev.activeTrainingMenuSetId === setId
+              ? nextDefaultId || normalized[0]?.id || ''
+              : prev.activeTrainingMenuSetId;
+          return {
+            ...prev,
+            menuSets: normalized,
+            activeTrainingMenuSetId: nextActiveId
+          };
+        });
+      },
+      setDefaultMenuSet: (setId) => {
+        setData((prev) => ({
+          ...prev,
+          menuSets: prev.menuSets.map((set) => ({
+            ...set,
+            isDefault: set.id === setId
+          }))
+        }));
+      },
+      setActiveMenuSet: (setId) => {
+        setData((prev) => {
+          if (!prev.menuSets.some((set) => set.id === setId)) {
+            return prev;
+          }
+          return {
+            ...prev,
+            activeTrainingMenuSetId: setId
+          };
+        });
+      },
+      assignMenuItemToSet: (setId, itemId) => {
+        setData((prev) => ({
+          ...prev,
+          menuSets: prev.menuSets.map((set) => {
+            if (set.id !== setId) {
+              return set;
+            }
+            if (set.itemIds.includes(itemId)) {
+              return set;
+            }
+            return {
+              ...set,
+              itemIds: [...set.itemIds, itemId]
+            };
+          })
+        }));
+      },
+      unassignMenuItemFromSet: (setId, itemId) => {
+        setData((prev) => ({
+          ...prev,
+          menuSets: prev.menuSets.map((set) =>
+            set.id === setId
+              ? {
+                  ...set,
+                  itemIds: set.itemIds.filter((id) => id !== itemId)
+                }
+              : set
+          )
+        }));
+      },
+      moveMenuItemInSet: (setId, itemId, direction) => {
+        setData((prev) => ({
+          ...prev,
+          menuSets: prev.menuSets.map((set) => {
+            if (set.id !== setId) {
+              return set;
+            }
+            const index = set.itemIds.findIndex((id) => id === itemId);
+            const nextIndex = index + direction;
+            if (index < 0 || nextIndex < 0 || nextIndex >= set.itemIds.length) {
+              return set;
+            }
+            const reordered = [...set.itemIds];
+            [reordered[index], reordered[nextIndex]] = [reordered[nextIndex], reordered[index]];
+            return {
+              ...set,
+              itemIds: reordered
+            };
+          })
+        }));
+      },
+      replaceMenuItems: (items) => {
+        setData((prev) => {
+          const nextMenuItems = items
+            .map((item, idx) => ({ ...item, order: idx + 1 }))
+            .sort((a, b) => a.order - b.order);
+          const nextMenuSetState = normalizeMenuSets(nextMenuItems, prev.menuSets, prev.activeTrainingMenuSetId);
+          return {
+            ...prev,
+            menuItems: nextMenuItems,
+            menuSets: nextMenuSetState.menuSets,
+            activeTrainingMenuSetId: nextMenuSetState.activeTrainingMenuSetId
+          };
+        });
       },
       updateUserProfile: (patch) => {
         setData((prev) => ({

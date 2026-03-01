@@ -32,17 +32,18 @@
 - AI用途のAPI Gatewayエンドポイント（例: `/ai/chat`, `/ai/advice`）は作成しない。
 - UIは `AiRuntimeEndpoint` に直接 `InvokeAgentRuntime` を実行する。
 
-### 2.4 実装ステータス（2026-02-28）
+### 2.4 実装ステータス（2026-03-01）
 
 - 実装済み:
 - Core API 側の認証/認可（Cognito access token + scope）
 - AIキャラクター設定API（`GET/PUT /ai-character-profile`）
-- AIチャットUI（モックストリーミング）
+- AgentCore Runtime 呼び出し（`AiRuntimeEndpoint` / SSE）
+- Runtime の `SOUL.md` / `PERSONA.md` / `system-prompt.ja.txt` 読込
+- Runtime の `chatSessionId` 管理（UIと同一IDを `sessionId` に利用）
+- Runtime の `AgentCoreMemorySessionManager` 連携（`actorId=sub`, `sessionId=chatSessionId`）
 - 未実装:
-- AgentCore Runtime 呼び出し（`AiRuntimeEndpoint`）
 - AgentCore Gateway（MCP）経由のツール実行
-- AgentCore Memory 連携
-- `config/prompts/SOUL.md` / `PERSONA.md` / `system-prompt.ja.txt` のRuntime読込処理
+- Memoryを使ったドメイン知識検索結果のプロンプト注入最適化
 
 ## 3. 認証・認可方式（必須）
 
@@ -101,19 +102,18 @@
 
 ### 4.1 AIチャットセッションモデル
 
-- `aiChatSessionId`: UI/アプリ側の会話スレッドID（永続）。
-- `runtimeSessionId`: Runtimeの会話継続ID（期限切れで再発行あり）。
-- `memorySessionId`: Memoryの`sessionId`（同一会話内で固定）。
-- マッピング方針:
-- `aiChatSessionId 1 : N runtimeSessionId`
-- `aiChatSessionId 1 : 1 memorySessionId`
-- `runtimeSessionId` 期限切れ時は、同じ `aiChatSessionId` に新しい `runtimeSessionId` を再関連付けする。
+- `chatSessionId`: UI/アプリ側で生成する会話スレッドID（永続）。
+- セッションIDは1種類に統一し、以下で同じ値を使用する。
+- Runtime invoke の `sessionId`
+- Memory の `session_id`
+- 同一会話中は `chatSessionId` を固定し、`新規チャット` 操作時のみ新しいIDを払い出す。
+- 画面リロード後も同一 `chatSessionId` を復元して会話を継続する。
 
 ### 4.2 MVP採用方式
 
 - `InvokeAgentRuntime` のストリーミング応答（`text/event-stream`）を採用する。
 - UIは `fetch` + `ReadableStream` で逐次描画する。
-- 会話継続は `runtimeSessionId` を再利用する。
+- 会話継続は `chatSessionId`（= Runtime `sessionId`）を再利用する。
 - テキスト本体だけでなく、Runtime内部ステータス（例: `thinking`, `tool_calling`, `tool_succeeded`）もストリームイベントとしてUIへ表示する。
 - 内部ステータスは Runtime 側で明示的にイベント生成し、UIは `message` イベントと `status` イベントを分離描画する。
 
@@ -271,7 +271,7 @@
 
 - `memoryId`: 環境ごとに1つ（`kintrain-memory-dev` など）
 - `actorId`: Cognito `sub` を使用
-- `sessionId`: `memorySessionId` を使用（AiChatSession単位）
+- `sessionId`: `chatSessionId` を使用（AiChatSession単位）
 - `eventExpiryDuration`: 90日（短期イベント保持期間）
 
 補足:
@@ -291,8 +291,8 @@
 
 ### 9.4 イベント投入
 
-- 各チャットターンで `CreateEvent` を実行し、会話をMemoryへ送る。
-- `actorId = sub`、`sessionId = memorySessionId` を必須で付与する。
+- Strands 連携では `AgentCoreMemorySessionManager` を使用し、各チャットターンの会話イベントをMemoryへ自動連携する。
+- `actorId = sub`、`sessionId = chatSessionId` を必須で付与する。
 - `payload` はユーザー発話/AI応答を記録する。
 - `eventTimestamp` はRFC3339 UTCでサーバー時刻を使用する。
 - `eventMetadata` に機微情報を入れない。
@@ -363,7 +363,7 @@
 - チャット応答がストリーミング表示されること。
 - チャットUIで `status` 系イベント（内部進行状態）が逐次表示されること。
 - DynamoDB参照が `sub` 単位で分離されること。
-- `CreateEvent` が `actorId/sub` と `memorySessionId` で登録されること。
+- Memoryイベントが `actorId/sub` と `chatSessionId` で登録されること。
 - `RetrieveMemoryRecords` の結果が応答文脈に反映されること。
 - コード変更なしで、プロンプトファイル更新のみで調整できること。
 - 応答ログに `soulFilePath`, `personaFilePath`, `systemPromptFilePath`, `promptGitRevision` が保存されること。

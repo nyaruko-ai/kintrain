@@ -35,7 +35,6 @@ export function AiChatPage() {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [statusEvents, setStatusEvents] = useState<Array<{ id: string; status: string; message: string }>>([]);
-  const runtimeSessionIdByChatSessionRef = useRef<Record<string, string>>({});
 
   const session = useMemo(
     () => data.aiChatSessions.find((s) => s.id === data.activeAiChatSessionId) ?? data.aiChatSessions[0],
@@ -114,11 +113,10 @@ export function AiChatPage() {
         await streamMockResponse(messageId, text);
       } else {
         appendStatus('status', 'AI Runtimeへ接続しています...');
-        const currentRuntimeSessionId = runtimeSessionIdByChatSessionRef.current[session.id];
-        const result = await invokeAiRuntimeStream(
+        await invokeAiRuntimeStream(
           {
             aiChatSessionId: session.id,
-            runtimeSessionId: currentRuntimeSessionId,
+            runtimeSessionId: session.id,
             userMessage: text,
             timeZoneId: data.userProfile.timeZoneId,
             characterName: data.aiCharacterProfile.characterName
@@ -133,16 +131,11 @@ export function AiChatPage() {
               appendAssistantChunk(messageId, event.chunk);
               return;
             }
-            if (event.type === 'done' && event.runtimeSessionId) {
+            if (event.type === 'done') {
               setStatusEvents([]);
-              runtimeSessionIdByChatSessionRef.current[session.id] = event.runtimeSessionId;
             }
           }
         );
-
-        if (result.runtimeSessionId) {
-          runtimeSessionIdByChatSessionRef.current[session.id] = result.runtimeSessionId;
-        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'AI Runtimeとの通信に失敗しました。';
@@ -159,7 +152,6 @@ export function AiChatPage() {
     if (isStreaming) {
       return;
     }
-    runtimeSessionIdByChatSessionRef.current = {};
     setStatusEvents([]);
     setInput('');
     restartActiveAiChatSession();

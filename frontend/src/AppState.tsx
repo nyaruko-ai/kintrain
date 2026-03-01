@@ -161,6 +161,7 @@ function normalizeAppData(rawData: AppData): AppData {
   const normalizedMenuItems = sourceMenuItems.map((item) => ({
     ...item,
     trainingName: item.trainingName ?? item.machineName ?? '未設定トレーニング',
+    bodyPart: item.bodyPart ?? '',
     ...normalizeRepsRange(item)
   }));
 
@@ -219,6 +220,7 @@ function toUtcIsoSeconds(localIso: string): string {
 function mapRemoteMenuItem(item: {
   trainingMenuItemId: string;
   trainingName: string;
+  bodyPart?: string;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;
@@ -231,6 +233,7 @@ function mapRemoteMenuItem(item: {
   return {
     id: item.trainingMenuItemId,
     trainingName: item.trainingName,
+    bodyPart: item.bodyPart ?? '',
     defaultWeightKg: Number(item.defaultWeightKg),
     defaultRepsMin: repsRange.defaultRepsMin,
     defaultRepsMax: repsRange.defaultRepsMax,
@@ -821,6 +824,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         }
         const payload = {
           trainingName: item.trainingName.trim(),
+          bodyPart: item.bodyPart.trim(),
           defaultWeightKg: Math.round(item.defaultWeightKg * 100) / 100,
           defaultRepsMin: Math.floor(item.defaultRepsMin),
           defaultRepsMax: Math.floor(item.defaultRepsMax),
@@ -882,6 +886,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         }
         void updateTrainingMenuItemApi(itemId, {
           trainingName: nextItem.trainingName.trim(),
+          bodyPart: nextItem.bodyPart.trim(),
           defaultWeightKg: Math.round(nextItem.defaultWeightKg * 100) / 100,
           defaultRepsMin: Math.floor(nextItem.defaultRepsMin),
           defaultRepsMax: Math.floor(nextItem.defaultRepsMax),

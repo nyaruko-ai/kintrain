@@ -127,6 +127,7 @@
 - `TrainingMenuItem` は以下を保持すること。
 - `trainingMenuItemId`
 - `trainingName`
+- `bodyPart`（任意、鍛える部位）
 - `defaultWeightKg`
 - `defaultRepsMin`
 - `defaultRepsMax`
@@ -260,6 +261,7 @@
 - `GET /training-menu-items` の `TrainingMenuItem` レスポンスモデル:
 - `trainingMenuItemId: string`
 - `trainingName: string`
+- `bodyPart: string`（任意。未設定時は空文字）
 - `defaultWeightKg: number`（小数2桁まで）
 - `defaultRepsMin: number`
 - `defaultRepsMax: number`
@@ -271,6 +273,7 @@
 - `updatedAt: RFC3339 UTC`
 - `POST /training-menu-items` リクエスト:
 - `trainingName`
+- `bodyPart`（任意）
 - `defaultWeightKg`
 - `defaultRepsMin`
 - `defaultRepsMax`
@@ -278,6 +281,7 @@
 - `defaultSets`
 - `PUT /training-menu-items/{trainingMenuItemId}` リクエスト:
 - `trainingName`
+- `bodyPart`（任意）
 - `defaultWeightKg`
 - `defaultRepsMin`
 - `defaultRepsMax`
@@ -359,6 +363,7 @@
 - `trainingMenuItemId`（ソートキー）
 - 主な属性:
 - `trainingName`
+- `bodyPart`
 - `normalizedTrainingName`
 - `defaultWeightKg`
 - `defaultRepsMin`

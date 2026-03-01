@@ -9,6 +9,7 @@ export interface SetDetail {
 export interface TrainingMenuItem {
   id: string;
   trainingName: string;
+  bodyPart: string;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;

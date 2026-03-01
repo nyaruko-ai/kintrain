@@ -25,6 +25,8 @@
 - `PUT /training-menu-items/{trainingMenuItemId}`
 - `PUT /training-menu-items/reorder`
 - `DELETE /training-menu-items/{trainingMenuItemId}`
+- 補足:
+- `trainingName` は維持しつつ、`bodyPart`（鍛える部位）を設定・更新できること
 
 4. 実施画面の初期表示データ取得
 - UI根拠: `ui-spec.md` 6

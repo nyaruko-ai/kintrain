@@ -304,6 +304,7 @@ async function run() {
         pathWithQuery: "/training-menu-items",
         body: {
           trainingName: "チェストプレス",
+          bodyPart: "胸",
           defaultWeightKg: 25.25,
           defaultRepsMin: 8,
           defaultRepsMax: 12,
@@ -312,6 +313,7 @@ async function run() {
       });
       assert.equal(res.status, 201);
       assert.ok(res.json.trainingMenuItemId);
+      assert.equal(res.json.bodyPart, "胸");
       state.menuItemA = res.json.trainingMenuItemId;
     });
 
@@ -323,6 +325,7 @@ async function run() {
         pathWithQuery: "/training-menu-items",
         body: {
           trainingName: "ラットプルダウン",
+          bodyPart: "背中",
           defaultWeightKg: 30,
           defaultRepsMin: 8,
           defaultRepsMax: 10,
@@ -331,6 +334,7 @@ async function run() {
       });
       assert.equal(res.status, 201);
       assert.ok(res.json.trainingMenuItemId);
+      assert.equal(res.json.bodyPart, "背中");
       state.menuItemB = res.json.trainingMenuItemId;
     });
 
@@ -355,6 +359,7 @@ async function run() {
         pathWithQuery: `/training-menu-items/${state.menuItemA}`,
         body: {
           trainingName: "チェストプレス改",
+          bodyPart: "胸",
           defaultWeightKg: 26.5,
           defaultRepsMin: 8,
           defaultRepsMax: 11,
@@ -363,6 +368,7 @@ async function run() {
       });
       assert.equal(res.status, 200);
       assert.equal(res.json.trainingName, "チェストプレス改");
+      assert.equal(res.json.bodyPart, "胸");
     });
 
     await testCase("TrainingMenu: PUT /training-menu-items/reorder updates order", async () => {

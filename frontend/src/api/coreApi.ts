@@ -13,6 +13,7 @@ type CoreEndpointOutput = {
 type TrainingMenuItemDto = {
   trainingMenuItemId: string;
   trainingName: string;
+  bodyPart?: string;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;
@@ -149,6 +150,7 @@ export async function listTrainingMenuItems(): Promise<ListTrainingMenuItemsResp
 
 export async function createTrainingMenuItem(input: {
   trainingName: string;
+  bodyPart?: string;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;
@@ -165,6 +167,7 @@ export async function updateTrainingMenuItem(
   trainingMenuItemId: string,
   input: Partial<{
     trainingName: string;
+    bodyPart: string;
     defaultWeightKg: number;
     defaultRepsMin: number;
     defaultRepsMax: number;

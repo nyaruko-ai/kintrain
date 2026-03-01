@@ -522,6 +522,8 @@
 - `CoachAgent` をRuntimeに配置し、会話制御と応答生成を行うこと。
 - `CoachAgent` の役割名（表示/設定上の正本）は `AIコーチ` とすること。
 - `AgentExecutionSession` を保持し、会話継続性を提供すること。
+- Runtime実装は Strands フレームワーク + Python を採用すること。
+- モデルIDはRuntime環境変数（例: `MODEL_ID`）で切替可能にすること。
 
 ### 9.2 Gateway（MCP）
 
@@ -534,10 +536,14 @@
 - `get_ai_character_profile()`
 - `save_advice_log(advice)`
 - `userId` はツール公開引数に含めず、RuntimeがJWT `sub` を内部注入すること。
+- MCP Lambda はメソッド名を `context.clientContext.custom.bedrockAgentCoreToolName` から判定すること（`event` 起点で判定しない）。
 
 ### 9.3 連携方式
 
 - RuntimeがGateway経由でMCPツールを呼び出し、DynamoDBの記録を参照してAdvice/Chatを生成すること。
+- RuntimeエンドポイントのInbound認可は Cognito アクセストークン（Bearer JWT）を使用すること。
+- Runtimeは受け取ったBearer JWTをGateway呼び出しへリレーし、Gateway側でも同トークンでInbound認可すること。
+- UIのAIチャットはストリーミング表示とし、回答本文に加えて進行状態イベント（例: thinking/tool calling）も表示可能にすること。
 
 ## 10. UI要件
 

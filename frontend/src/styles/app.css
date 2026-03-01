@@ -440,6 +440,8 @@ a {
 }
 
 .btn {
+  appearance: none;
+  -webkit-appearance: none;
   border-radius: 999px;
   border: 1px solid transparent;
   padding: 9px 13px;
@@ -449,6 +451,7 @@ a {
   align-items: center;
   justify-content: center;
   font-weight: 600;
+  color: var(--text);
   white-space: nowrap;
   word-break: keep-all;
   transition: 120ms ease;
@@ -471,6 +474,9 @@ a {
 .btn.subtle {
   background: #f6f8fa;
   border-color: #e0e6eb;
+  color: #1f2328;
+  -webkit-text-fill-color: #1f2328;
+  font-weight: 700;
 }
 
 .btn.danger {
@@ -486,8 +492,14 @@ a {
 }
 
 .btn:disabled {
-  opacity: 0.55;
+  opacity: 1;
   cursor: not-allowed;
+}
+
+.btn.subtle:disabled {
+  background: #e8edf2;
+  border-color: #c8d2dc;
+  color: #3d4a5c;
 }
 
 .bottom-nav {

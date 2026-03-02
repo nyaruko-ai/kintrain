@@ -351,6 +351,12 @@ a {
   gap: 10px;
 }
 
+.menu-set-submit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
 .menu-set-name-edit-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -399,6 +405,41 @@ a {
   margin-top: 6px;
   color: var(--primary-strong);
   font-size: 0.9rem;
+}
+
+.overlay-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(12, 18, 24, 0.35);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.overlay-modal-card {
+  width: min(100%, 420px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px;
+  box-shadow: var(--shadow-strong);
+  display: grid;
+  gap: 10px;
+}
+
+.overlay-modal-card h3 {
+  font-size: 1.02rem;
+}
+
+.overlay-modal-card p {
+  color: var(--muted);
+}
+
+.overlay-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .simple-list {
@@ -561,13 +602,15 @@ a {
 }
 
 .priority-chip {
-  display: inline-block;
+  display: inline-flex;
+  justify-self: start;
+  width: fit-content;
   background: rgba(14, 122, 115, 0.12);
   color: var(--primary-strong);
   border-radius: 999px;
   padding: 4px 9px;
   font-size: 0.75rem;
-  margin-bottom: 4px;
+  margin: 0 0 4px;
 }
 
 .training-item-head {
@@ -660,6 +703,30 @@ a {
 .menu-metrics-row input {
   text-align: center;
   padding: 8px 8px;
+}
+
+.menu-item-header-under {
+  display: grid;
+  gap: 8px;
+}
+
+.menu-item-actions-under {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 36px 36px minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.menu-item-icon-button {
+  width: 36px;
+  min-width: 36px;
+  padding: 8px 0;
+}
+
+.menu-item-delete-button {
+  white-space: nowrap;
 }
 
 .menu-add-button {
@@ -820,6 +887,22 @@ a {
   .menu-existing-attach,
   .menu-set-name-edit-row {
     grid-template-columns: 1fr;
+  }
+
+  .menu-item-header-under {
+    gap: 6px;
+  }
+
+  .menu-item-actions-under {
+    width: 100%;
+    grid-template-columns: 34px 34px minmax(0, 1fr) auto;
+    gap: 5px;
+  }
+
+  .menu-item-icon-button {
+    width: 34px;
+    min-width: 34px;
+    padding: 7px 0;
   }
 
   .input-grid.training-metrics-grid {

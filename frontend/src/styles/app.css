@@ -1158,6 +1158,76 @@ a {
   margin-bottom: 3px;
 }
 
+.message-markdown {
+  margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.message-markdown-placeholder {
+  margin: 0;
+}
+
+.message-markdown > *:first-child {
+  margin-top: 0;
+}
+
+.message-markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+.message-markdown p {
+  margin: 0;
+}
+
+.message-markdown p + p {
+  margin-top: 8px;
+}
+
+.message-markdown ul,
+.message-markdown ol {
+  margin: 8px 0;
+  padding-left: 1.2em;
+}
+
+.message-markdown li + li {
+  margin-top: 2px;
+}
+
+.message-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.9em;
+  background: rgba(87, 96, 112, 0.12);
+  border-radius: 6px;
+  padding: 1px 4px;
+}
+
+.message-markdown pre {
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(87, 96, 112, 0.1);
+  overflow: auto;
+}
+
+.message-markdown pre code {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+}
+
+.message-markdown blockquote {
+  margin: 8px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+
+.message-markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
 .chat-input {
   display: grid;
   gap: 10px;

@@ -1,4 +1,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
 import { useAppState } from '../AppState';
 import { invokeAiRuntimeStream, isAiRuntimeConfigured } from '../api/aiRuntimeApi';
 import { useAuth } from '../AuthState';
@@ -19,6 +22,21 @@ function buildMockAdvice(input: string, tone: TonePreset): string {
     return `結論です。${base} 「${input}」については、実施可否を30秒以内に判断して次へ進みましょう。`;
   }
   return `了解です。${base} 「${input}」に合わせて、今日は実行優先でいきましょう。`;
+}
+
+function MarkdownMessage({ content }: { content: string }) {
+  return (
+    <div className="message-markdown">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkBreaks]}
+        components={{
+          a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" />
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 export function AiChatPage() {
@@ -191,7 +209,11 @@ export function AiChatPage() {
                 {isAssistant && <img src={messageAvatar} alt="ai" className="avatar-small" />}
                 <div className={isAssistant ? 'message-bubble assistant' : 'message-bubble user'}>
                   {isAssistant && <p className="message-name">{data.aiCharacterProfile.characterName}</p>}
-                  <p>{message.content || (isStreaming ? '...' : '')}</p>
+                  {message.content ? (
+                    <MarkdownMessage content={message.content} />
+                  ) : (
+                    <p className="message-markdown-placeholder">{isStreaming ? '...' : ''}</p>
+                  )}
                 </div>
               </div>
             </div>

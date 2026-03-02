@@ -370,9 +370,18 @@ if (enableAgentCoreResources) {
     description: "KinTrain long-term memory for AI coach conversation context",
     expirationDuration: Duration.days(90),
     memoryStrategies: [
-      agentcore.MemoryStrategy.usingBuiltInUserPreference(),
-      agentcore.MemoryStrategy.usingBuiltInSummarization(),
-      agentcore.MemoryStrategy.usingBuiltInSemantic()
+      agentcore.MemoryStrategy.usingUserPreference({
+        name: "KinTrainUserPreference",
+        namespaces: ["/preferences/{actorId}"]
+      }),
+      agentcore.MemoryStrategy.usingSummarization({
+        name: "KinTrainSummarization",
+        namespaces: ["/summaries/{actorId}/{sessionId}"]
+      }),
+      agentcore.MemoryStrategy.usingSemantic({
+        name: "KinTrainSemantic",
+        namespaces: ["/facts/{actorId}"]
+      })
     ]
   });
 

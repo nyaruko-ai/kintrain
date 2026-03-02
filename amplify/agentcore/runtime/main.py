@@ -1,21 +1,21 @@
-"""KinTrain AgentCore Runtime HTTP server.
+"""KinTrain AgentCore Runtime entrypoint based server.
 
 Runtime contract:
-- GET /ping
-- POST /invocations (SSE stream response)
+- /ping and /invocations are managed by BedrockAgentCoreApp
+- streaming payload is emitted as SSE data frames (JSON per frame)
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
 import sys
 import uuid
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from collections.abc import AsyncGenerator
 
 
 MODEL_ID = os.getenv("MODEL_ID", "anthropic.claude-opus-4-6-v1")
@@ -25,10 +25,15 @@ APP_TIMEZONE_DEFAULT = os.getenv("APP_TIMEZONE_DEFAULT", "Asia/Tokyo")
 SYSTEM_PROMPT_FILE_PATH = os.getenv("SYSTEM_PROMPT_FILE_PATH", "config/prompts/system-prompt.ja.txt")
 PERSONA_FILE_PATH = os.getenv("PERSONA_FILE_PATH", "config/prompts/PERSONA.md")
 SOUL_FILE_PATH = os.getenv("SOUL_FILE_PATH", "config/prompts/SOUL.md")
-RUNTIME_HOST = os.getenv("RUNTIME_HOST", "0.0.0.0")
-RUNTIME_PORT = int(os.getenv("RUNTIME_PORT", "8080"))
 STREAM_CHUNK_CHAR_SIZE = int(os.getenv("STREAM_CHUNK_CHAR_SIZE", "24"))
 VENDOR_DIR = (Path(__file__).resolve().parent / "vendor").resolve()
+LTM_ENABLED = os.getenv("LTM_RETRIEVAL_ENABLED", "true").strip().lower() != "false"
+LTM_PREFERENCES_TOP_K = int(os.getenv("LTM_PREFERENCES_TOP_K", "5"))
+LTM_PREFERENCES_MIN_SCORE = float(os.getenv("LTM_PREFERENCES_MIN_SCORE", "0.7"))
+LTM_FACTS_TOP_K = int(os.getenv("LTM_FACTS_TOP_K", "10"))
+LTM_FACTS_MIN_SCORE = float(os.getenv("LTM_FACTS_MIN_SCORE", "0.3"))
+LTM_SUMMARIES_TOP_K = int(os.getenv("LTM_SUMMARIES_TOP_K", "5"))
+LTM_SUMMARIES_MIN_SCORE = float(os.getenv("LTM_SUMMARIES_MIN_SCORE", "0.5"))
 
 if VENDOR_DIR.exists():
     sys.path.insert(0, str(VENDOR_DIR))
@@ -51,17 +56,28 @@ def _load_system_prompt() -> str:
 
 SYSTEM_PROMPT = _load_system_prompt()
 
+try:
+    from bedrock_agentcore.runtime import BedrockAgentCoreApp, BedrockAgentCoreContext  # type: ignore
+except Exception:
+    from bedrock_agentcore import BedrockAgentCoreApp  # type: ignore
+    from bedrock_agentcore.runtime import BedrockAgentCoreContext  # type: ignore
 
-def _get_strands_dependencies() -> tuple[Any, Any, Any, Any]:
+app = BedrockAgentCoreApp()
+
+
+def _get_strands_dependencies() -> tuple[Any, Any, Any, Any, Any]:
     try:
-        from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig  # type: ignore
+        from bedrock_agentcore.memory.integrations.strands.config import (  # type: ignore
+            AgentCoreMemoryConfig,
+            RetrievalConfig,
+        )
         from bedrock_agentcore.memory.integrations.strands.session_manager import (  # type: ignore
             AgentCoreMemorySessionManager,
         )
         from strands import Agent  # type: ignore
         from strands.models import BedrockModel  # type: ignore
 
-        return Agent, BedrockModel, AgentCoreMemoryConfig, AgentCoreMemorySessionManager
+        return Agent, BedrockModel, AgentCoreMemoryConfig, RetrievalConfig, AgentCoreMemorySessionManager
     except Exception as exc:
         raise RuntimeError(
             "Required Strands/AgentCore packages are not available. "
@@ -97,16 +113,21 @@ def _decode_jwt_payload_without_verification(token: str) -> dict[str, Any]:
         return {}
 
 
-def _resolve_actor_id(session_id: str, authorization_header: str | None) -> str:
+def _resolve_actor_id(authorization_header: str | None) -> str:
     token = _extract_bearer_token(authorization_header)
     if token:
         claims = _decode_jwt_payload_without_verification(token)
         sub = claims.get("sub")
         if isinstance(sub, str) and sub.strip():
             return sub.strip()
-    # Runtime authorizer should usually guarantee authenticated calls.
-    # Fallback is namespaced by session to avoid cross-session contamination.
-    return f"anonymous:{session_id}"
+    raise RuntimeError("Cognito access token sub claim is required for actorId.")
+
+
+def _get_request_headers_from_context() -> dict[str, str]:
+    headers = BedrockAgentCoreContext.get_request_headers()
+    if not headers:
+        return {}
+    return {str(key).lower(): str(value) for key, value in headers.items()}
 
 
 def _response_to_text(response: Any) -> str:
@@ -132,17 +153,37 @@ def _chunk_text(text: str, chunk_size: int) -> list[str]:
     return [text[index : index + size] for index in range(0, len(text), size)]
 
 
+def _build_retrieval_config(retrieval_config_class: Any) -> dict[str, Any]:
+    if not LTM_ENABLED:
+        return {}
+    return {
+        "/preferences/{actorId}": retrieval_config_class(
+            top_k=max(1, LTM_PREFERENCES_TOP_K),
+            relevance_score=max(0.0, min(1.0, LTM_PREFERENCES_MIN_SCORE)),
+        ),
+        "/facts/{actorId}": retrieval_config_class(
+            top_k=max(1, LTM_FACTS_TOP_K),
+            relevance_score=max(0.0, min(1.0, LTM_FACTS_MIN_SCORE)),
+        ),
+        "/summaries/{actorId}/{sessionId}": retrieval_config_class(
+            top_k=max(1, LTM_SUMMARIES_TOP_K),
+            relevance_score=max(0.0, min(1.0, LTM_SUMMARIES_MIN_SCORE)),
+        ),
+    }
+
+
 def _run_agent_turn(session_id: str, actor_id: str, user_text: str) -> str:
     if not MEMORY_ID:
         raise RuntimeError("MEMORY_ID is not configured in runtime environment variables.")
 
-    Agent, BedrockModel, AgentCoreMemoryConfig, AgentCoreMemorySessionManager = _get_strands_dependencies()
+    Agent, BedrockModel, AgentCoreMemoryConfig, RetrievalConfig, AgentCoreMemorySessionManager = _get_strands_dependencies()
     model = BedrockModel(model_id=MODEL_ID)
 
     memory_config = AgentCoreMemoryConfig(
         memory_id=MEMORY_ID,
         actor_id=actor_id,
         session_id=session_id,
+        retrieval_config=_build_retrieval_config(RetrievalConfig),
     )
 
     with AgentCoreMemorySessionManager(
@@ -158,119 +199,37 @@ def _run_agent_turn(session_id: str, actor_id: str, user_text: str) -> str:
         return _response_to_text(response)
 
 
-def _sse(event_name: str, payload: dict[str, Any]) -> bytes:
-    event_line = f"event: {event_name}\n"
-    data_line = f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-    return (event_line + data_line).encode("utf-8")
+async def _stream_runtime_response(payload: dict[str, Any], context: Any) -> AsyncGenerator[dict[str, Any], None]:
+    user_text = str(payload.get("inputText", "")).strip()
+    if not user_text:
+        raise ValueError("inputText is required")
 
+    context_session_id = getattr(context, "session_id", None)
+    session_id = str(payload.get("sessionId") or context_session_id or uuid.uuid4())
 
-class RuntimeHandler(BaseHTTPRequestHandler):
-    server_version = "KinTrainRuntime/1.0"
-    protocol_version = "HTTP/1.1"
+    headers = _get_request_headers_from_context()
+    authorization_header = headers.get("authorization")
+    actor_id = _resolve_actor_id(authorization_header)
 
-    def _json_response(self, status_code: int, payload: dict[str, Any]) -> None:
-        content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status_code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(content)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type,Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-        self.end_headers()
-        self.wfile.write(content)
-        self.wfile.flush()
-
-    def do_OPTIONS(self) -> None:
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type,Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-        self.send_header("Content-Length", "0")
-        self.end_headers()
-
-    def do_GET(self) -> None:
-        parsed = urlparse(self.path)
-        if parsed.path != "/ping":
-            self._json_response(404, {"message": "Not Found"})
-            return
-
-        self._json_response(
-            200,
-            {
-                "ok": True,
-                "modelId": MODEL_ID,
-                "timezoneDefault": APP_TIMEZONE_DEFAULT,
-                "promptLoaded": bool(SYSTEM_PROMPT),
-            },
-        )
-
-    def do_POST(self) -> None:
-        parsed = urlparse(self.path)
-        if parsed.path != "/invocations":
-            self._json_response(404, {"message": "Not Found"})
-            return
-
-        try:
-            content_length = int(self.headers.get("Content-Length", "0"))
-            raw_body = self.rfile.read(content_length) if content_length > 0 else b"{}"
-            payload = json.loads(raw_body.decode("utf-8"))
-        except Exception:
-            self._json_response(400, {"message": "Invalid JSON payload"})
-            return
-
-        user_text = str(payload.get("inputText", "")).strip()
-        session_id = str(payload.get("sessionId") or uuid.uuid4())
-        authorization_header = self.headers.get("Authorization")
-        if not user_text:
-            self._json_response(400, {"message": "inputText is required"})
-            return
-
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type,Authorization")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-        self.end_headers()
-
-        try:
-            self.wfile.write(_sse("status", {"status": "thinking", "message": "考え中です..."}))
-            self.wfile.flush()
-
-            actor_id = _resolve_actor_id(session_id, authorization_header)
-            output_text = _run_agent_turn(session_id=session_id, actor_id=actor_id, user_text=user_text)
-            for chunk in _chunk_text(output_text, STREAM_CHUNK_CHAR_SIZE):
-                self.wfile.write(_sse("chunk", {"chunk": chunk}))
-                self.wfile.flush()
-
-            self.wfile.write(_sse("done", {"runtimeSessionId": session_id}))
-            self.wfile.flush()
-        except Exception as exc:
-            self.wfile.write(_sse("status", {"status": "error", "message": f"{type(exc).__name__}: {exc}"}))
-            self.wfile.write(_sse("done", {"runtimeSessionId": session_id}))
-            self.wfile.flush()
-
-    def log_message(self, fmt: str, *args: Any) -> None:
-        # Keep runtime logs concise.
-        print(f"{self.address_string()} - {fmt % args}")
-
-
-def run() -> None:
-    server = ThreadingHTTPServer((RUNTIME_HOST, RUNTIME_PORT), RuntimeHandler)
-    print(
-        json.dumps(
-            {
-                "message": "KinTrain runtime server started",
-                "host": RUNTIME_HOST,
-                "port": RUNTIME_PORT,
-                "modelId": MODEL_ID,
-            },
-            ensure_ascii=False,
-        )
+    yield {"event": "status", "status": "thinking", "message": "考え中です..."}
+    output_text = await asyncio.to_thread(
+        _run_agent_turn, session_id=session_id, actor_id=actor_id, user_text=user_text
     )
-    server.serve_forever()
+    for chunk in _chunk_text(output_text, STREAM_CHUNK_CHAR_SIZE):
+        yield {"event": "chunk", "chunk": chunk}
+    yield {"event": "done", "runtimeSessionId": session_id}
+
+
+@app.entrypoint
+async def invoke(payload: dict[str, Any], context: Any) -> AsyncGenerator[dict[str, Any], None]:
+    try:
+        async for event in _stream_runtime_response(payload, context):
+            yield event
+    except Exception as exc:
+        fallback_session_id = str(payload.get("sessionId") or getattr(context, "session_id", None) or uuid.uuid4())
+        yield {"event": "status", "status": "error", "message": f"{type(exc).__name__}: {exc}"}
+        yield {"event": "done", "runtimeSessionId": fallback_session_id}
 
 
 if __name__ == "__main__":
-    run()
+    app.run()

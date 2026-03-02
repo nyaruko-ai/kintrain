@@ -358,19 +358,19 @@ function MenuItemCard({
 }) {
   return (
     <article className="card">
-      <div className="row-between align-start gap-sm">
+      <div className="menu-item-header-under">
         <p className="priority-chip">順序 {order}</p>
-        <div className="row-wrap">
-          <button type="button" className="btn subtle" onClick={onMoveUp}>
+        <div className="menu-item-actions-under">
+          <button type="button" className="btn subtle menu-item-icon-button" onClick={onMoveUp} aria-label="上へ移動">
             ↑
           </button>
-          <button type="button" className="btn subtle" onClick={onMoveDown}>
+          <button type="button" className="btn subtle menu-item-icon-button" onClick={onMoveDown} aria-label="下へ移動">
             ↓
           </button>
           <button type="button" className="btn subtle" onClick={onRemoveFromSet}>
             セットから外す
           </button>
-          <button type="button" className="btn danger" onClick={onDelete}>
+          <button type="button" className="btn danger menu-item-delete-button" onClick={onDelete}>
             種目削除
           </button>
         </div>

@@ -18,7 +18,7 @@ from typing import Any
 from collections.abc import AsyncGenerator
 
 
-MODEL_ID = os.getenv("MODEL_ID", "anthropic.claude-opus-4-6-v1")
+MODEL_ID = os.getenv("MODEL_ID", "global.anthropic.claude-sonnet-4-6")
 MEMORY_ID = os.getenv("MEMORY_ID", "").strip()
 AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "ap-northeast-1"
 APP_TIMEZONE_DEFAULT = os.getenv("APP_TIMEZONE_DEFAULT", "Asia/Tokyo")

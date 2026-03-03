@@ -212,6 +212,16 @@ function toChunkEvent(eventName: string, payload: unknown): AiRuntimeStreamEvent
   return null;
 }
 
+function resolveEventName(eventName: string, payload: unknown): string {
+  if (payload && typeof payload === "object") {
+    const embeddedEvent = (payload as Record<string, unknown>).event;
+    if (typeof embeddedEvent === "string" && embeddedEvent.trim().length > 0) {
+      return embeddedEvent.trim();
+    }
+  }
+  return eventName;
+}
+
 export async function invokeAiRuntimeStream(
   input: InvokeAiRuntimeInput,
   onEvent: (event: AiRuntimeStreamEvent) => void
@@ -275,14 +285,15 @@ export async function invokeAiRuntimeStream(
       } catch {
         // Keep raw text payload.
       }
+      const resolvedEventName = resolveEventName(parsed.eventName, payload);
 
-      const statusEvent = toStatusEvent(parsed.eventName, payload);
+      const statusEvent = toStatusEvent(resolvedEventName, payload);
       if (statusEvent) {
         onEvent(statusEvent);
         continue;
       }
 
-      const chunkEvent = toChunkEvent(parsed.eventName, payload);
+      const chunkEvent = toChunkEvent(resolvedEventName, payload);
       if (chunkEvent) {
         if (chunkEvent.type === "done" && chunkEvent.runtimeSessionId) {
           finalRuntimeSessionId = chunkEvent.runtimeSessionId;
@@ -308,12 +319,13 @@ export async function invokeAiRuntimeStream(
         } catch {
           // Keep raw text payload.
         }
+        const resolvedEventName = resolveEventName(tail.eventName, payload);
 
-        const statusEvent = toStatusEvent(tail.eventName, payload);
+        const statusEvent = toStatusEvent(resolvedEventName, payload);
         if (statusEvent) {
           onEvent(statusEvent);
         } else {
-          const chunkEvent = toChunkEvent(tail.eventName, payload);
+          const chunkEvent = toChunkEvent(resolvedEventName, payload);
           if (chunkEvent) {
             if (chunkEvent.type === "done" && chunkEvent.runtimeSessionId) {
               finalRuntimeSessionId = chunkEvent.runtimeSessionId;

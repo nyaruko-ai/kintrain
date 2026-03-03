@@ -370,9 +370,18 @@ if (enableAgentCoreResources) {
     description: "KinTrain long-term memory for AI coach conversation context",
     expirationDuration: Duration.days(90),
     memoryStrategies: [
-      agentcore.MemoryStrategy.usingBuiltInUserPreference(),
-      agentcore.MemoryStrategy.usingBuiltInSummarization(),
-      agentcore.MemoryStrategy.usingBuiltInSemantic()
+      agentcore.MemoryStrategy.usingUserPreference({
+        name: "KinTrainUserPreference",
+        namespaces: ["/preferences/{actorId}"]
+      }),
+      agentcore.MemoryStrategy.usingSummarization({
+        name: "KinTrainSummarization",
+        namespaces: ["/summaries/{actorId}/{sessionId}"]
+      }),
+      agentcore.MemoryStrategy.usingSemantic({
+        name: "KinTrainSemantic",
+        namespaces: ["/facts/{actorId}"]
+      })
     ]
   });
 
@@ -395,7 +404,7 @@ if (enableAgentCoreResources) {
       allowlistedHeaders: ["Authorization"]
     },
     environmentVariables: {
-      MODEL_ID: process.env.MODEL_ID ?? "anthropic.claude-opus-4-6-v1",
+      MODEL_ID: process.env.MODEL_ID ?? "global.anthropic.claude-sonnet-4-6",
       APP_TIMEZONE_DEFAULT: process.env.APP_TIMEZONE_DEFAULT ?? "Asia/Tokyo",
       MCP_GATEWAY_URL: aiCoachGateway.gatewayUrl ?? "",
       MEMORY_ID: aiCoachMemory.memoryId,

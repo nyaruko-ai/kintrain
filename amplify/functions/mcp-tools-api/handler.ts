@@ -89,7 +89,9 @@ function extractToolName(context: LambdaToolContext): string | null {
     return null;
   }
   const separatorIndex = normalized.indexOf("__");
-  return separatorIndex >= 0 ? normalized.slice(separatorIndex + 2) : normalized;
+  const rawToolName = separatorIndex >= 0 ? normalized.slice(separatorIndex + 2) : normalized;
+  const trimmedToolName = rawToolName.replace(/^_+/, "");
+  return trimmedToolName.length > 0 ? trimmedToolName : null;
 }
 
 function requireConfiguredTables(): string | null {

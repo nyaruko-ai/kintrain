@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from collections.abc import AsyncGenerator
+from collections.abc import Mapping
 from zoneinfo import ZoneInfo
 
 
@@ -145,15 +146,25 @@ def _resolve_actor_id(authorization_header: str | None) -> str:
     raise RuntimeError("Cognito access token sub claim is required for actorId.")
 
 
-def _get_request_headers_from_context(context: Any) -> dict[str, str]:
-    context_headers = getattr(context, "request_headers", None)
-    if isinstance(context_headers, dict) and context_headers:
-        return {str(key).lower(): str(value) for key, value in context_headers.items()}
-
-    headers = BedrockAgentCoreContext.get_request_headers()
-    if not headers:
+def _normalize_header_mapping(headers_obj: Any) -> dict[str, str]:
+    if not headers_obj:
         return {}
-    return {str(key).lower(): str(value) for key, value in headers.items()}
+    if isinstance(headers_obj, Mapping):
+        items = headers_obj.items()
+    elif hasattr(headers_obj, "items"):
+        items = headers_obj.items()
+    else:
+        return {}
+    return {str(key).lower(): str(value) for key, value in items}
+
+
+def _get_request_headers_from_context(context: Any) -> dict[str, str]:
+    context_headers = _normalize_header_mapping(getattr(context, "request_headers", None))
+    if context_headers:
+        return context_headers
+
+    fallback_headers = _normalize_header_mapping(BedrockAgentCoreContext.get_request_headers())
+    return fallback_headers
 
 
 def _resolve_authorization_header(headers: dict[str, str]) -> str | None:
@@ -467,6 +478,7 @@ async def _stream_runtime_response(payload: dict[str, Any], context: Any) -> Asy
 
     session_id = _resolve_runtime_session_id(payload, context)
     headers = _get_request_headers_from_context(context)
+    print(f"runtime-request-headers keys={sorted(headers.keys())}")
     authorization_header = _resolve_authorization_header(headers)
     if not authorization_header:
         raise RuntimeError("Authorization header is required.")

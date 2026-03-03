@@ -400,6 +400,12 @@ if (enableAgentCoreResources) {
       undefined,
       ["aws.cognito.signin.user.admin"]
     ),
+    requestHeaderConfiguration: {
+      allowlistedHeaders: [
+        "Authorization",
+        "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Authorization"
+      ]
+    },
     environmentVariables: {
       MODEL_ID: process.env.MODEL_ID ?? "global.anthropic.claude-sonnet-4-6",
       APP_TIMEZONE_DEFAULT: process.env.APP_TIMEZONE_DEFAULT ?? "Asia/Tokyo",

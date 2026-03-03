@@ -401,12 +401,20 @@ if (enableAgentCoreResources) {
       ["aws.cognito.signin.user.admin"]
     ),
     requestHeaderConfiguration: {
-      allowlistedHeaders: ["Authorization"]
+      allowlistedHeaders: [
+        "Authorization",
+        "X-Amzn-Bedrock-AgentCore-Runtime-Custom-Authorization"
+      ]
     },
     environmentVariables: {
       MODEL_ID: process.env.MODEL_ID ?? "global.anthropic.claude-sonnet-4-6",
       APP_TIMEZONE_DEFAULT: process.env.APP_TIMEZONE_DEFAULT ?? "Asia/Tokyo",
       MCP_GATEWAY_URL: aiCoachGateway.gatewayUrl ?? "",
+      ENABLE_MCP_TOOLS: process.env.ENABLE_MCP_TOOLS ?? "true",
+      ENABLE_WEB_SEARCH_TOOL: process.env.ENABLE_WEB_SEARCH_TOOL ?? "false",
+      WEB_SEARCH_PROVIDER: process.env.WEB_SEARCH_PROVIDER ?? "tavily",
+      TAVILY_API_KEY: process.env.TAVILY_API_KEY ?? "",
+      EXA_API_KEY: process.env.EXA_API_KEY ?? "",
       MEMORY_ID: aiCoachMemory.memoryId,
       SOUL_FILE_PATH: "config/prompts/SOUL.md",
       PERSONA_FILE_PATH: "config/prompts/PERSONA.md",

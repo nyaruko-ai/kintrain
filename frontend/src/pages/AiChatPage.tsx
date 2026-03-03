@@ -133,7 +133,6 @@ export function AiChatPage() {
         appendStatus('status', 'AI Runtimeへ接続しています...');
         await invokeAiRuntimeStream(
           {
-            aiChatSessionId: session.id,
             runtimeSessionId: session.id,
             userMessage: text,
             userProfile: data.userProfile,

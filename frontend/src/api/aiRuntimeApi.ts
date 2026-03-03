@@ -30,7 +30,6 @@ export type AiRuntimeStreamEvent =
     };
 
 export type InvokeAiRuntimeInput = {
-  aiChatSessionId: string;
   runtimeSessionId?: string;
   userMessage: string;
   userProfile: UserProfile;
@@ -88,6 +87,17 @@ function getAiRuntimeAccessToken(session: Awaited<ReturnType<typeof fetchAuthSes
     throw new Error("Cognito access token is not available.");
   }
   return token;
+}
+
+function toRuntimeSessionId(inputSessionId: string): string {
+  const raw = inputSessionId.trim();
+  if (raw.length >= 33) {
+    return raw;
+  }
+  const base = raw || `chat-${Date.now()}`;
+  const normalized = base.replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase();
+  const candidate = `runtime-session-${normalized}`.slice(0, 128);
+  return candidate.length >= 33 ? candidate : candidate.padEnd(33, "0");
 }
 
 export function isAiRuntimeConfigured(): boolean {
@@ -233,18 +243,19 @@ export async function invokeAiRuntimeStream(
 
   const session = await fetchAuthSession();
   const accessToken = getAiRuntimeAccessToken(session);
+  const runtimeSessionId = toRuntimeSessionId(input.runtimeSessionId ?? "");
   const response = await fetch(runtimeInvokeConfig.invokeUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       Accept: "text/event-stream",
-      Authorization: `Bearer ${accessToken}`
+      Authorization: `Bearer ${accessToken}`,
+      "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": runtimeSessionId
     },
     body: JSON.stringify({
       inputText: input.userMessage,
-      sessionId: input.runtimeSessionId,
+      sessionId: runtimeSessionId,
       metadata: {
-        aiChatSessionId: input.aiChatSessionId,
         userProfile: {
           userName: input.userProfile.userName,
           sex: input.userProfile.sex,

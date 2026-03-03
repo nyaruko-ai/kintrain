@@ -18,11 +18,17 @@ type LambdaToolContext = {
   clientContext?: {
     custom?: {
       bedrockAgentCoreToolName?: string;
+      bedrockAgentCoreActorId?: string;
+      actorId?: string;
+      userId?: string;
     };
   };
   client_context?: {
     custom?: {
       bedrockAgentCoreToolName?: string;
+      bedrockAgentCoreActorId?: string;
+      actorId?: string;
+      userId?: string;
     };
   };
 };
@@ -83,7 +89,9 @@ function extractToolName(context: LambdaToolContext): string | null {
     return null;
   }
   const separatorIndex = normalized.indexOf("__");
-  return separatorIndex >= 0 ? normalized.slice(separatorIndex + 2) : normalized;
+  const rawToolName = separatorIndex >= 0 ? normalized.slice(separatorIndex + 2) : normalized;
+  const trimmedToolName = rawToolName.replace(/^_+/, "");
+  return trimmedToolName.length > 0 ? trimmedToolName : null;
 }
 
 function requireConfiguredTables(): string | null {
@@ -93,8 +101,18 @@ function requireConfiguredTables(): string | null {
   return null;
 }
 
-function requireUserId(args: ToolArgs): string | null {
-  return toNonEmptyString(args.userId) ?? null;
+function requireUserId(args: ToolArgs, context: LambdaToolContext): string | null {
+  return (
+    toNonEmptyString(args.userId) ??
+    toNonEmptyString(args.actorId) ??
+    toNonEmptyString(context.clientContext?.custom?.bedrockAgentCoreActorId) ??
+    toNonEmptyString(context.client_context?.custom?.bedrockAgentCoreActorId) ??
+    toNonEmptyString(context.clientContext?.custom?.actorId) ??
+    toNonEmptyString(context.client_context?.custom?.actorId) ??
+    toNonEmptyString(context.clientContext?.custom?.userId) ??
+    toNonEmptyString(context.client_context?.custom?.userId) ??
+    null
+  );
 }
 
 async function getRecentGymVisits(args: ToolArgs, userId: string): Promise<LambdaLikeResponse> {
@@ -296,9 +314,9 @@ export const handler = async (event: ToolArgs = {}, context: LambdaToolContext =
       });
     }
 
-    const userId = requireUserId(event);
+    const userId = requireUserId(event, context);
     if (!userId) {
-      return jsonResponse(400, { message: "userId is required." });
+      return jsonResponse(400, { message: "userId is required (args.userId or context actor identifier)." });
     }
 
     if (toolName === "get_recent_gym_visits") {

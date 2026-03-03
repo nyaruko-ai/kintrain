@@ -30,7 +30,6 @@ export type AiRuntimeStreamEvent =
     };
 
 export type InvokeAiRuntimeInput = {
-  aiChatSessionId: string;
   runtimeSessionId?: string;
   userMessage: string;
   userProfile: UserProfile;
@@ -244,7 +243,7 @@ export async function invokeAiRuntimeStream(
 
   const session = await fetchAuthSession();
   const accessToken = getAiRuntimeAccessToken(session);
-  const runtimeSessionId = toRuntimeSessionId(input.runtimeSessionId || input.aiChatSessionId);
+  const runtimeSessionId = toRuntimeSessionId(input.runtimeSessionId ?? "");
   const response = await fetch(runtimeInvokeConfig.invokeUrl, {
     method: "POST",
     headers: {
@@ -257,7 +256,6 @@ export async function invokeAiRuntimeStream(
       inputText: input.userMessage,
       sessionId: runtimeSessionId,
       metadata: {
-        aiChatSessionId: input.aiChatSessionId,
         userProfile: {
           userName: input.userProfile.userName,
           sex: input.userProfile.sex,

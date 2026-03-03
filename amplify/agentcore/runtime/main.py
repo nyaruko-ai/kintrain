@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,10 @@ SYSTEM_PROMPT_FILE_PATH = os.getenv("SYSTEM_PROMPT_FILE_PATH", "config/prompts/s
 PERSONA_FILE_PATH = os.getenv("PERSONA_FILE_PATH", "config/prompts/PERSONA.md")
 SOUL_FILE_PATH = os.getenv("SOUL_FILE_PATH", "config/prompts/SOUL.md")
 STREAM_CHUNK_CHAR_SIZE = int(os.getenv("STREAM_CHUNK_CHAR_SIZE", "24"))
+MCP_GATEWAY_URL = os.getenv("MCP_GATEWAY_URL", "").strip()
+ENABLE_MCP_TOOLS = os.getenv("ENABLE_MCP_TOOLS", "true").strip().lower() != "false"
+ENABLE_WEB_SEARCH_TOOL = os.getenv("ENABLE_WEB_SEARCH_TOOL", "false").strip().lower() == "true"
+WEB_SEARCH_PROVIDER = os.getenv("WEB_SEARCH_PROVIDER", "tavily").strip().lower()
 VENDOR_DIR = (Path(__file__).resolve().parent / "vendor").resolve()
 LTM_ENABLED = os.getenv("LTM_RETRIEVAL_ENABLED", "true").strip().lower() != "false"
 LTM_PREFERENCES_TOP_K = int(os.getenv("LTM_PREFERENCES_TOP_K", "5"))
@@ -87,6 +92,19 @@ def _get_strands_dependencies() -> tuple[Any, Any, Any, Any, Any]:
             "Required Strands/AgentCore packages are not available. "
             "Install `strands-agents` and `bedrock-agentcore` in runtime package."
         ) from exc
+
+
+def _get_mcp_dependencies() -> tuple[Any, Any]:
+    try:
+        from mcp.client.streamable_http import streamablehttp_client  # type: ignore
+        from strands.tools.mcp import MCPClient  # type: ignore
+
+        return MCPClient, streamablehttp_client
+    except Exception:
+        from mcp.client.streamable_http import streamablehttp_client  # type: ignore
+        from strands.tools.mcp.mcp_client import MCPClient  # type: ignore
+
+        return MCPClient, streamablehttp_client
 
 
 def _extract_bearer_token(authorization_header: str | None) -> str | None:
@@ -174,6 +192,15 @@ def _build_retrieval_config(retrieval_config_class: Any) -> dict[str, Any]:
             relevance_score=max(0.0, min(1.0, LTM_SUMMARIES_MIN_SCORE)),
         ),
     }
+
+
+def _normalize_mcp_gateway_url(raw_url: str) -> str:
+    url = raw_url.strip().rstrip("/")
+    if not url:
+        return ""
+    if url.endswith("/mcp"):
+        return url
+    return f"{url}/mcp"
 
 
 def _to_non_empty_string(value: Any, fallback: str = "") -> str:
@@ -292,7 +319,60 @@ def _build_system_prompt(payload: dict[str, Any]) -> str:
     return _render_template(SYSTEM_PROMPT_TEMPLATE, context)
 
 
-def _run_agent_turn(session_id: str, actor_id: str, user_text: str, system_prompt: str) -> str:
+def _load_web_search_tools() -> list[Any]:
+    if not ENABLE_WEB_SEARCH_TOOL:
+        return []
+
+    try:
+        if WEB_SEARCH_PROVIDER == "tavily":
+            if not _to_non_empty_string(os.getenv("TAVILY_API_KEY")):
+                return []
+            from strands_tools import tavily_search  # type: ignore
+
+            return [tavily_search]
+        if WEB_SEARCH_PROVIDER == "exa":
+            if not _to_non_empty_string(os.getenv("EXA_API_KEY")):
+                return []
+            from strands_tools import exa_search  # type: ignore
+
+            return [exa_search]
+        return []
+    except Exception as exc:
+        print(f"web-search-tools-disabled: {type(exc).__name__}: {exc}")
+        return []
+
+
+def _list_mcp_tools(mcp_client: Any) -> list[Any]:
+    tools: list[Any] = []
+    pagination_token: str | None = None
+    while True:
+        if pagination_token is None:
+            page = mcp_client.list_tools_sync()
+        else:
+            page = mcp_client.list_tools_sync(pagination_token=pagination_token)
+
+        page_tools: list[Any] = []
+        try:
+            page_tools = list(page)
+        except Exception:
+            raw_tools = getattr(page, "tools", None)
+            if isinstance(raw_tools, list):
+                page_tools = raw_tools
+
+        tools.extend(page_tools)
+        pagination_token = getattr(page, "pagination_token", None)
+        if not pagination_token:
+            break
+    return tools
+
+
+def _run_agent_turn(
+    session_id: str,
+    actor_id: str,
+    user_text: str,
+    system_prompt: str,
+    authorization_header: str | None,
+) -> str:
     if not MEMORY_ID:
         raise RuntimeError("MEMORY_ID is not configured in runtime environment variables.")
 
@@ -310,13 +390,45 @@ def _run_agent_turn(session_id: str, actor_id: str, user_text: str, system_promp
         agentcore_memory_config=memory_config,
         region_name=AWS_REGION,
     ) as session_manager:
-        agent = Agent(
-            model=model,
-            system_prompt=system_prompt,
-            session_manager=session_manager,
-        )
-        response = agent(user_text)
-        return _response_to_text(response)
+        web_search_tools = _load_web_search_tools()
+        mcp_url = _normalize_mcp_gateway_url(MCP_GATEWAY_URL)
+        mcp_context = nullcontext()
+        mcp_client = None
+
+        if ENABLE_MCP_TOOLS and mcp_url and authorization_header:
+            try:
+                MCPClient, streamablehttp_client = _get_mcp_dependencies()
+                mcp_client = MCPClient(
+                    lambda: streamablehttp_client(
+                        url=mcp_url,
+                        headers={
+                            "Authorization": authorization_header
+                        },
+                    )
+                )
+                mcp_context = mcp_client
+            except Exception as exc:
+                print(f"mcp-client-init-failed: {type(exc).__name__}: {exc}")
+
+        with mcp_context:
+            mcp_tools: list[Any] = []
+            if mcp_client is not None:
+                try:
+                    mcp_tools = _list_mcp_tools(mcp_client)
+                except Exception as exc:
+                    print(f"mcp-tool-list-failed: {type(exc).__name__}: {exc}")
+
+            tools = [*mcp_tools, *web_search_tools]
+            agent_kwargs = {
+                "model": model,
+                "system_prompt": system_prompt,
+                "session_manager": session_manager,
+            }
+            if tools:
+                agent_kwargs["tools"] = tools
+            agent = Agent(**agent_kwargs)
+            response = agent(user_text)
+            return _response_to_text(response)
 
 
 async def _stream_runtime_response(payload: dict[str, Any], context: Any) -> AsyncGenerator[dict[str, Any], None]:
@@ -339,6 +451,7 @@ async def _stream_runtime_response(payload: dict[str, Any], context: Any) -> Asy
         actor_id=actor_id,
         user_text=user_text,
         system_prompt=system_prompt,
+        authorization_header=authorization_header,
     )
     for chunk in _chunk_text(output_text, STREAM_CHUNK_CHAR_SIZE):
         yield {"event": "chunk", "chunk": chunk}

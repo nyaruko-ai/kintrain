@@ -239,10 +239,10 @@ export async function invokeAiRuntimeStream(
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       Accept: "text/event-stream",
-      Authorization: `Bearer ${accessToken}`,
+      authorization: `Bearer ${accessToken}`,
       ...(runtimeSessionHeaderId
         ? {
-            "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": runtimeSessionHeaderId
+            "x-amzn-bedrock-agentcore-runtime-session-id": runtimeSessionHeaderId
           }
         : {})
     },

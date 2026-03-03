@@ -96,6 +96,16 @@ type ListDailyRecordsResponse = {
   items: DailyRecordDto[];
 };
 
+type AiCharacterProfileDto = {
+  characterId?: string;
+  characterName?: string;
+  avatarImageUrl?: string;
+  tonePreset?: string;
+  characterDescription?: string;
+  speechEnding?: string;
+  updatedAt?: string;
+};
+
 const coreApiEndpoint = (amplifyOutputs as CoreEndpointOutput).custom?.endpoints?.coreApiEndpoint ?? '';
 const baseUrl = coreApiEndpoint.replace(/\/+$/, '');
 
@@ -317,5 +327,25 @@ export async function listDailyRecords(params: { from: string; to: string }): Pr
   search.set('to', params.to);
   return coreApiFetch<ListDailyRecordsResponse>(`/daily-records?${search.toString()}`, {
     method: 'GET'
+  });
+}
+
+export async function getAiCharacterProfile(): Promise<AiCharacterProfileDto> {
+  return coreApiFetch<AiCharacterProfileDto>('/ai-character-profile', {
+    method: 'GET'
+  });
+}
+
+export async function putAiCharacterProfile(input: {
+  characterId: string;
+  characterName: string;
+  avatarImageUrl: string;
+  tonePreset: string;
+  characterDescription: string;
+  speechEnding: string;
+}): Promise<AiCharacterProfileDto> {
+  return coreApiFetch<AiCharacterProfileDto>('/ai-character-profile', {
+    method: 'PUT',
+    body: JSON.stringify(input)
   });
 }

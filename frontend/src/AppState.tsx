@@ -6,11 +6,13 @@ import {
   createTrainingMenuItem,
   deleteTrainingMenuSet as deleteTrainingMenuSetApi,
   deleteTrainingMenuItem as deleteTrainingMenuItemApi,
+  getAiCharacterProfile as getAiCharacterProfileApi,
   getProfile,
   listDailyRecords as listDailyRecordsApi,
   listGymVisits,
   listTrainingMenuItems,
   listTrainingMenuSets,
+  putAiCharacterProfile as putAiCharacterProfileApi,
   putDailyRecord as putDailyRecordApi,
   putProfile,
   removeTrainingMenuItemFromSet as removeTrainingMenuItemFromSetApi,
@@ -77,6 +79,7 @@ interface AppStateContextValue {
   updateUserProfile: (patch: Partial<UserProfile>) => void;
   saveUserProfile: () => Promise<{ ok: boolean; message?: string }>;
   updateAiCharacterProfile: (patch: Partial<AiCharacterProfile>) => void;
+  saveAiCharacterProfile: (patch?: Partial<AiCharacterProfile>) => Promise<{ ok: boolean; message?: string }>;
   restartActiveAiChatSession: () => void;
   appendUserMessage: (content: string) => void;
   createAssistantMessage: () => string;
@@ -424,6 +427,33 @@ function mapRemoteDailyRecord(
   };
 }
 
+function mapRemoteAiCharacterProfile(item: {
+  characterId?: string;
+  characterName?: string;
+  avatarImageUrl?: string;
+  tonePreset?: string;
+  characterDescription?: string;
+  speechEnding?: string;
+}): AiCharacterProfile {
+  return {
+    ...initialAppData.aiCharacterProfile,
+    characterId:
+      typeof item.characterId === 'string' && item.characterId.trim() ? item.characterId : initialAppData.aiCharacterProfile.characterId,
+    characterName:
+      typeof item.characterName === 'string' && item.characterName.trim()
+        ? item.characterName
+        : initialAppData.aiCharacterProfile.characterName,
+    tonePreset:
+      item.tonePreset === 'polite' || item.tonePreset === 'friendly-coach' || item.tonePreset === 'strict-coach'
+        ? item.tonePreset
+        : initialAppData.aiCharacterProfile.tonePreset,
+    characterDescription:
+      typeof item.characterDescription === 'string' ? item.characterDescription : initialAppData.aiCharacterProfile.characterDescription,
+    speechEnding: typeof item.speechEnding === 'string' ? item.speechEnding : initialAppData.aiCharacterProfile.speechEnding,
+    avatarImageUrl: initialAppData.aiCharacterProfile.avatarImageUrl
+  };
+}
+
 function toDailyRecordPayload(record: DailyRecord): {
   bodyWeightKg?: number;
   bodyFatPercent?: number;
@@ -465,12 +495,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
     setIsCoreDataLoading(true);
     try {
-      const [profile, menu, menuSetsResponse, visits, dailyRecordsResponse] = await Promise.all([
+      const [profile, menu, menuSetsResponse, visits, dailyRecordsResponse, aiCharacterProfileResponse] = await Promise.all([
         getProfile(),
         listTrainingMenuItems(),
         listTrainingMenuSets(),
         listGymVisits({ limit: 200 }),
-        listDailyRecordsApi({ from: '1970-01-01', to: '2100-12-31' })
+        listDailyRecordsApi({ from: '1970-01-01', to: '2100-12-31' }),
+        getAiCharacterProfileApi()
       ]);
       const menuItems = menu.items
         .filter((item) => item.isActive)
@@ -500,6 +531,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             menuSets: nextMenuSetState.menuSets,
             activeTrainingMenuSetId: nextMenuSetState.activeTrainingMenuSetId,
             gymVisits,
+            aiCharacterProfile: mapRemoteAiCharacterProfile(aiCharacterProfileResponse),
             dailyRecords: {
               ...prev.dailyRecords,
               ...Object.fromEntries(
@@ -1321,6 +1353,36 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
             ...patch
           }
         }));
+      },
+      saveAiCharacterProfile: async (patch) => {
+        if (!isAuthenticated) {
+          return { ok: false, message: 'ログイン後に保存してください。' };
+        }
+        const nextProfile = {
+          ...data.aiCharacterProfile,
+          ...(patch ?? {}),
+          avatarImageUrl: initialAppData.aiCharacterProfile.avatarImageUrl
+        };
+        try {
+          const saved = await putAiCharacterProfileApi({
+            characterId: nextProfile.characterId,
+            characterName: nextProfile.characterName,
+            avatarImageUrl: nextProfile.avatarImageUrl,
+            tonePreset: nextProfile.tonePreset,
+            characterDescription: nextProfile.characterDescription,
+            speechEnding: nextProfile.speechEnding
+          });
+          setData((prev) => ({
+            ...prev,
+            aiCharacterProfile: mapRemoteAiCharacterProfile(saved)
+          }));
+          setCoreDataError('');
+          return { ok: true };
+        } catch (error) {
+          const message = toErrorMessage(error, 'AI設定の保存に失敗しました。');
+          setCoreDataError(message);
+          return { ok: false, message };
+        }
       },
       restartActiveAiChatSession: () => {
         setData((prev) => {

@@ -14,7 +14,6 @@ def main() -> None:
     runtime_dir = Path(__file__).resolve().parent
     vendor_dir = runtime_dir / "vendor"
     vendor_bin_dir = vendor_dir / "bin"
-    otel_command = vendor_bin_dir / "opentelemetry-instrument"
 
     current_path = os.environ.get("PATH", "")
     os.environ["PATH"] = (
@@ -26,8 +25,11 @@ def main() -> None:
         f"{vendor_dir}:{current_pythonpath}" if current_pythonpath else str(vendor_dir)
     )
 
+    # Invoke OTEL via `python -m ...` to avoid relying on executable bit of vendor/bin script.
     command = [
-        str(otel_command if otel_command.exists() else "opentelemetry-instrument"),
+        sys.executable,
+        "-m",
+        "opentelemetry.instrumentation.auto_instrumentation",
         sys.executable,
         str(runtime_dir / "main.py"),
     ]

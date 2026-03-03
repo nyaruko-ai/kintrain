@@ -17,7 +17,8 @@
           "type": "integer",
           "description": "取得件数上限（1-100）"
         }
-      }
+      },
+      "required": ["userId"]
     }
   },
   {
@@ -39,7 +40,7 @@
           "description": "取得件数上限（1-100）"
         }
       },
-      "required": ["trainingMenuItemId"]
+      "required": ["userId", "trainingMenuItemId"]
     }
   },
   {
@@ -60,7 +61,8 @@
           "type": "string",
           "description": "終了日（YYYY-MM-DD）"
         }
-      }
+      },
+      "required": ["userId"]
     }
   },
   {
@@ -78,7 +80,7 @@
           "description": "対象日（YYYY-MM-DD）"
         }
       },
-      "required": ["date"]
+      "required": ["userId", "date"]
     }
   },
   {
@@ -91,7 +93,8 @@
           "type": "string",
           "description": "内部利用。Runtime がJWT subを設定する。"
         }
-      }
+      },
+      "required": ["userId"]
     }
   },
   {
@@ -104,7 +107,8 @@
           "type": "string",
           "description": "内部利用。Runtime がJWT subを設定する。"
         }
-      }
+      },
+      "required": ["userId"]
     }
   },
   {
@@ -126,7 +130,7 @@
           "description": "保存するアドバイス本文"
         }
       },
-      "required": ["advice"]
+      "required": ["userId", "advice"]
     }
   }
 ]

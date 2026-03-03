@@ -90,6 +90,22 @@ function getAiRuntimeAccessToken(session: Awaited<ReturnType<typeof fetchAuthSes
   return token;
 }
 
+function decodeJwtSub(accessToken: string): string | undefined {
+  try {
+    const parts = accessToken.split(".");
+    if (parts.length < 2) {
+      return undefined;
+    }
+    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
+    const decoded = atob(padded);
+    const parsed = JSON.parse(decoded) as Record<string, unknown>;
+    return typeof parsed.sub === "string" && parsed.sub.trim().length > 0 ? parsed.sub.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function isAiRuntimeConfigured(): boolean {
   return runtimeInvokeConfig !== null;
 }
@@ -233,6 +249,7 @@ export async function invokeAiRuntimeStream(
 
   const session = await fetchAuthSession();
   const accessToken = getAiRuntimeAccessToken(session);
+  const userIdFromToken = decodeJwtSub(accessToken);
   const response = await fetch(runtimeInvokeConfig.invokeUrl, {
     method: "POST",
     headers: {
@@ -245,12 +262,17 @@ export async function invokeAiRuntimeStream(
       sessionId: input.runtimeSessionId,
       metadata: {
         aiChatSessionId: input.aiChatSessionId,
+        userId: userIdFromToken,
+        auth: {
+          accessToken
+        },
         userProfile: {
           userName: input.userProfile.userName,
           sex: input.userProfile.sex,
           birthDate: input.userProfile.birthDate,
           heightCm: input.userProfile.heightCm,
-          timeZoneId: input.userProfile.timeZoneId
+          timeZoneId: input.userProfile.timeZoneId,
+          userId: userIdFromToken
         },
         aiCharacterProfile: {
           characterName: input.aiCharacterProfile.characterName,

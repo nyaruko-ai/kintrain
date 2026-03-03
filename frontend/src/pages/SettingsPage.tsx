@@ -17,7 +17,7 @@ const timeZoneCandidates = [
 export function SettingsPage() {
   const navigate = useNavigate();
   const { logout } = useAuth();
-  const { data, updateUserProfile, saveUserProfile, updateAiCharacterProfile, coreDataError, isCoreDataLoading } = useAppState();
+  const { data, updateUserProfile, saveUserProfile, saveAiCharacterProfile, coreDataError, isCoreDataLoading } = useAppState();
   const [userStatus, setUserStatus] = useState('');
   const [aiStatus, setAiStatus] = useState('');
   const [aiCharacterName, setAiCharacterName] = useState(data.aiCharacterProfile.characterName);
@@ -172,14 +172,14 @@ export function SettingsPage() {
           <button
             type="button"
             className="btn primary"
-            onClick={() => {
-              updateAiCharacterProfile({
+            onClick={async () => {
+              const result = await saveAiCharacterProfile({
                 characterName: aiCharacterName.trim() || data.aiCharacterProfile.characterName,
                 tonePreset: aiTonePreset,
                 characterDescription: aiCharacterDescription.trim(),
                 speechEnding: aiSpeechEnding.trim()
               });
-              setAiStatus('AIコーチキャラクター設定を反映しました。');
+              setAiStatus(result.ok ? 'AIコーチキャラクター設定を保存しました。' : result.message ?? '保存に失敗しました。');
             }}
           >
             AI設定を反映

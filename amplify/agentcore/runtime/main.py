@@ -145,62 +145,36 @@ def _resolve_actor_id(authorization_header: str | None) -> str:
     raise RuntimeError("Cognito access token sub claim is required for actorId.")
 
 
-def _extract_metadata_access_token(metadata: dict[str, Any]) -> str | None:
-    auth = metadata.get("auth")
-    candidates: list[Any] = []
-    if isinstance(auth, dict):
-        candidates.extend([auth.get("accessToken"), auth.get("access_token"), auth.get("token")])
-    candidates.extend([metadata.get("accessToken"), metadata.get("access_token")])
+def _get_request_headers_from_context(context: Any) -> dict[str, str]:
+    context_headers = getattr(context, "request_headers", None)
+    if isinstance(context_headers, dict) and context_headers:
+        return {str(key).lower(): str(value) for key, value in context_headers.items()}
 
-    for candidate in candidates:
-        if isinstance(candidate, str):
-            token = candidate.strip()
-            if token:
-                return token
-    return None
-
-
-def _resolve_authorization_header(headers: dict[str, str], metadata: dict[str, Any]) -> str | None:
-    authorization_header = headers.get("authorization")
-    if isinstance(authorization_header, str) and authorization_header.strip():
-        return authorization_header.strip()
-
-    metadata_token = _extract_metadata_access_token(metadata)
-    if not metadata_token:
-        return None
-    if metadata_token.lower().startswith("bearer "):
-        return metadata_token
-    return f"Bearer {metadata_token}"
-
-
-def _resolve_actor_id_with_fallback(authorization_header: str | None, metadata: dict[str, Any]) -> str:
-    token_actor_id: str | None = None
-    try:
-        token_actor_id = _resolve_actor_id(authorization_header)
-    except Exception:
-        token_actor_id = None
-    if token_actor_id:
-        return token_actor_id
-
-    direct_user_id = metadata.get("userId")
-    if isinstance(direct_user_id, str) and direct_user_id.strip():
-        return direct_user_id.strip()
-
-    user_profile = metadata.get("userProfile")
-    if isinstance(user_profile, dict):
-        for key in ("userId", "sub"):
-            value = user_profile.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-
-    raise RuntimeError("Cognito access token sub claim is required for actorId.")
-
-
-def _get_request_headers_from_context() -> dict[str, str]:
     headers = BedrockAgentCoreContext.get_request_headers()
     if not headers:
         return {}
     return {str(key).lower(): str(value) for key, value in headers.items()}
+
+
+def _resolve_authorization_header(headers: dict[str, str]) -> str | None:
+    custom_authorization = headers.get("x-amzn-bedrock-agentcore-runtime-custom-authorization")
+    if isinstance(custom_authorization, str) and custom_authorization.strip():
+        return custom_authorization.strip()
+
+    authorization = headers.get("authorization")
+    if isinstance(authorization, str) and authorization.strip():
+        return authorization.strip()
+    return None
+
+
+def _resolve_runtime_session_id(payload: dict[str, Any], context: Any) -> str:
+    context_session_id = getattr(context, "session_id", None)
+    if context_session_id is None:
+        context_session_id = payload.get("sessionId")
+    session_id = str(context_session_id or "").strip()
+    if not session_id or len(session_id) < 33:
+        raise RuntimeError("A valid runtime session id is required (minimum 33 characters).")
+    return session_id
 
 
 def _response_to_text(response: Any) -> str:
@@ -491,13 +465,12 @@ async def _stream_runtime_response(payload: dict[str, Any], context: Any) -> Asy
     if not user_text:
         raise ValueError("inputText is required")
 
-    context_session_id = getattr(context, "session_id", None)
-    session_id = str(payload.get("sessionId") or context_session_id or uuid.uuid4())
-
-    metadata = _extract_metadata(payload)
-    headers = _get_request_headers_from_context()
-    authorization_header = _resolve_authorization_header(headers, metadata)
-    actor_id = _resolve_actor_id_with_fallback(authorization_header, metadata)
+    session_id = _resolve_runtime_session_id(payload, context)
+    headers = _get_request_headers_from_context(context)
+    authorization_header = _resolve_authorization_header(headers)
+    if not authorization_header:
+        raise RuntimeError("Authorization header is required.")
+    actor_id = _resolve_actor_id(authorization_header)
     system_prompt = _build_system_prompt(payload)
 
     yield {"event": "status", "status": "thinking", "message": "考え中です..."}

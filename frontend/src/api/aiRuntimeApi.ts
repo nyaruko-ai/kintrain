@@ -90,20 +90,15 @@ function getAiRuntimeAccessToken(session: Awaited<ReturnType<typeof fetchAuthSes
   return token;
 }
 
-function decodeJwtSub(accessToken: string): string | undefined {
-  try {
-    const parts = accessToken.split(".");
-    if (parts.length < 2) {
-      return undefined;
-    }
-    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
-    const decoded = atob(padded);
-    const parsed = JSON.parse(decoded) as Record<string, unknown>;
-    return typeof parsed.sub === "string" && parsed.sub.trim().length > 0 ? parsed.sub.trim() : undefined;
-  } catch {
-    return undefined;
+function toRuntimeSessionId(inputSessionId: string): string {
+  const raw = inputSessionId.trim();
+  if (raw.length >= 33) {
+    return raw;
   }
+  const base = raw || `chat-${Date.now()}`;
+  const normalized = base.replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase();
+  const candidate = `runtime-session-${normalized}`.slice(0, 128);
+  return candidate.length >= 33 ? candidate : candidate.padEnd(33, "0");
 }
 
 export function isAiRuntimeConfigured(): boolean {
@@ -249,30 +244,26 @@ export async function invokeAiRuntimeStream(
 
   const session = await fetchAuthSession();
   const accessToken = getAiRuntimeAccessToken(session);
-  const userIdFromToken = decodeJwtSub(accessToken);
+  const runtimeSessionId = toRuntimeSessionId(input.runtimeSessionId || input.aiChatSessionId);
   const response = await fetch(runtimeInvokeConfig.invokeUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       Accept: "text/event-stream",
-      authorization: `Bearer ${accessToken}`
+      Authorization: `Bearer ${accessToken}`,
+      "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": runtimeSessionId
     },
     body: JSON.stringify({
       inputText: input.userMessage,
-      sessionId: input.runtimeSessionId,
+      sessionId: runtimeSessionId,
       metadata: {
         aiChatSessionId: input.aiChatSessionId,
-        userId: userIdFromToken,
-        auth: {
-          accessToken
-        },
         userProfile: {
           userName: input.userProfile.userName,
           sex: input.userProfile.sex,
           birthDate: input.userProfile.birthDate,
           heightCm: input.userProfile.heightCm,
-          timeZoneId: input.userProfile.timeZoneId,
-          userId: userIdFromToken
+          timeZoneId: input.userProfile.timeZoneId
         },
         aiCharacterProfile: {
           characterName: input.aiCharacterProfile.characterName,

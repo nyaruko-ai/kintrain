@@ -14,6 +14,7 @@ type TrainingMenuItemDto = {
   trainingMenuItemId: string;
   trainingName: string;
   bodyPart?: string;
+  equipment?: string;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;
@@ -218,6 +219,7 @@ export async function listTrainingMenuItems(): Promise<ListTrainingMenuItemsResp
 export async function createTrainingMenuItem(input: {
   trainingName: string;
   bodyPart?: string;
+  equipment?: string;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;
@@ -235,6 +237,7 @@ export async function updateTrainingMenuItem(
   input: Partial<{
     trainingName: string;
     bodyPart: string;
+    equipment: string;
     defaultWeightKg: number;
     defaultRepsMin: number;
     defaultRepsMax: number;

@@ -38,6 +38,7 @@ import type {
   ExerciseEntry,
   Goal,
   SetDetail,
+  TrainingEquipment,
   TrainingMenuSet,
   TrainingMenuItem,
   UserProfile
@@ -97,6 +98,16 @@ interface AppStateContextValue {
 }
 
 const AppStateContext = createContext<AppStateContextValue | null>(null);
+
+const defaultTrainingEquipment: TrainingEquipment = 'マシン';
+const trainingEquipmentValues: TrainingEquipment[] = ['マシン', 'バーベル', 'ダンベル', 'ケトルベル', '自重', 'その他'];
+
+function normalizeTrainingEquipment(value: unknown): TrainingEquipment {
+  if (typeof value === 'string' && trainingEquipmentValues.includes(value as TrainingEquipment)) {
+    return value as TrainingEquipment;
+  }
+  return defaultTrainingEquipment;
+}
 
 function getDefaultDailySaveStatus(): DailySaveStatus {
   return {
@@ -258,6 +269,7 @@ function normalizeAppData(rawData: AppData): AppData {
     ...item,
     trainingName: item.trainingName ?? item.machineName ?? '未設定トレーニング',
     bodyPart: item.bodyPart ?? '',
+    equipment: normalizeTrainingEquipment((item as TrainingMenuItem & { equipment?: unknown }).equipment),
     ...normalizeRepsRange(item)
   }));
   const normalizedMenuSetState = normalizeMenuSets(normalizedMenuItems, legacy.menuSets, legacy.activeTrainingMenuSetId);
@@ -320,6 +332,7 @@ function mapRemoteMenuItem(item: {
   trainingMenuItemId: string;
   trainingName: string;
   bodyPart?: string;
+  equipment?: string;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;
@@ -333,6 +346,7 @@ function mapRemoteMenuItem(item: {
     id: item.trainingMenuItemId,
     trainingName: item.trainingName,
     bodyPart: item.bodyPart ?? '',
+    equipment: normalizeTrainingEquipment(item.equipment),
     defaultWeightKg: Number(item.defaultWeightKg),
     defaultRepsMin: repsRange.defaultRepsMin,
     defaultRepsMax: repsRange.defaultRepsMax,
@@ -1012,6 +1026,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         const payload = {
           trainingName: item.trainingName.trim(),
           bodyPart: item.bodyPart.trim(),
+          equipment: normalizeTrainingEquipment(item.equipment),
           defaultWeightKg: Math.round(item.defaultWeightKg * 100) / 100,
           defaultRepsMin: Math.floor(item.defaultRepsMin),
           defaultRepsMax: Math.floor(item.defaultRepsMax),
@@ -1075,6 +1090,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         void updateTrainingMenuItemApi(itemId, {
           trainingName: nextItem.trainingName.trim(),
           bodyPart: nextItem.bodyPart.trim(),
+          equipment: normalizeTrainingEquipment(nextItem.equipment),
           defaultWeightKg: Math.round(nextItem.defaultWeightKg * 100) / 100,
           defaultRepsMin: Math.floor(nextItem.defaultRepsMin),
           defaultRepsMax: Math.floor(nextItem.defaultRepsMax),

@@ -30,6 +30,7 @@ type RepsRange = {
 type TrainingMenuItemInput = RepsRangeInput & {
   trainingName: string;
   bodyPart?: string;
+  equipment?: string;
   defaultWeightKg: number;
   defaultSets: number;
 };
@@ -60,6 +61,23 @@ function toTrimmedString(value: unknown): string | undefined {
     return undefined;
   }
   return value.trim();
+}
+
+const allowedEquipments = new Set(["マシン", "バーベル", "ダンベル", "ケトルベル", "自重", "その他"]);
+const defaultEquipment = "マシン";
+
+function normalizeEquipment(value: unknown): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!allowedEquipments.has(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
 }
 
 function toRepsRangeFromItem(item: Record<string, unknown>): RepsRange {
@@ -105,6 +123,7 @@ function toTrainingMenuResponse(item: Record<string, unknown>): Record<string, u
     trainingMenuItemId: item.trainingMenuItemId,
     trainingName: item.trainingName,
     bodyPart: typeof item.bodyPart === "string" ? item.bodyPart : "",
+    equipment: typeof item.equipment === "string" ? item.equipment : defaultEquipment,
     defaultWeightKg: item.defaultWeightKg,
     defaultRepsMin: repsRange.defaultRepsMin,
     defaultRepsMax: repsRange.defaultRepsMax,
@@ -339,6 +358,10 @@ async function createTrainingMenuItem(event: APIGatewayProxyEvent, userId: strin
     return response(400, { message: "trainingName is required." });
   }
   const bodyPart = toTrimmedString(body.bodyPart) ?? "";
+  const equipment = normalizeEquipment(body.equipment) ?? defaultEquipment;
+  if (body.equipment !== undefined && !normalizeEquipment(body.equipment)) {
+    return response(400, { message: "equipment must be one of マシン/バーベル/ダンベル/ケトルベル/自重/その他." });
+  }
 
   const repsRange = resolveRepsRange(body);
   if (!repsRange) {
@@ -371,6 +394,7 @@ async function createTrainingMenuItem(event: APIGatewayProxyEvent, userId: strin
         trainingMenuItemId,
         trainingName,
         bodyPart,
+        equipment,
         normalizedTrainingName,
         defaultWeightKg,
         defaultRepsMin: repsRange.defaultRepsMin,
@@ -390,6 +414,7 @@ async function createTrainingMenuItem(event: APIGatewayProxyEvent, userId: strin
     trainingMenuItemId,
     trainingName,
     bodyPart,
+    equipment,
     defaultWeightKg,
     defaultRepsMin: repsRange.defaultRepsMin,
     defaultRepsMax: repsRange.defaultRepsMax,
@@ -429,9 +454,15 @@ async function updateTrainingMenuItem(
   const current = existing.Item as Record<string, unknown>;
   const currentName = String(current.trainingName ?? "");
   const currentBodyPart = typeof current.bodyPart === "string" ? current.bodyPart : "";
+  const currentEquipment = typeof current.equipment === "string" ? current.equipment : defaultEquipment;
   const nextName = toNonEmptyString(body.trainingName) ?? currentName;
   const nextBodyPartInput = toTrimmedString(body.bodyPart);
   const nextBodyPart = body.bodyPart !== undefined ? nextBodyPartInput ?? "" : currentBodyPart;
+  const nextEquipmentNormalized = normalizeEquipment(body.equipment);
+  if (body.equipment !== undefined && !nextEquipmentNormalized) {
+    return response(400, { message: "equipment must be one of マシン/バーベル/ダンベル/ケトルベル/自重/その他." });
+  }
+  const nextEquipment = body.equipment !== undefined ? nextEquipmentNormalized ?? currentEquipment : currentEquipment;
   const nextNormalizedName = normalizeTrainingName(nextName);
   const repsRange = resolveRepsRange(body, current);
 
@@ -459,6 +490,7 @@ async function updateTrainingMenuItem(
   const updated = {
     trainingName: nextName,
     bodyPart: nextBodyPart,
+    equipment: nextEquipment,
     normalizedTrainingName: nextNormalizedName,
     defaultWeightKg:
       body.defaultWeightKg !== undefined
@@ -480,10 +512,11 @@ async function updateTrainingMenuItem(
         trainingMenuItemId
       },
       UpdateExpression:
-        "SET trainingName = :trainingName, bodyPart = :bodyPart, normalizedTrainingName = :normalizedTrainingName, defaultWeightKg = :defaultWeightKg, defaultRepsMin = :defaultRepsMin, defaultRepsMax = :defaultRepsMax, defaultReps = :defaultReps, defaultSets = :defaultSets, isActive = :isActive, updatedAt = :updatedAt",
+        "SET trainingName = :trainingName, bodyPart = :bodyPart, equipment = :equipment, normalizedTrainingName = :normalizedTrainingName, defaultWeightKg = :defaultWeightKg, defaultRepsMin = :defaultRepsMin, defaultRepsMax = :defaultRepsMax, defaultReps = :defaultReps, defaultSets = :defaultSets, isActive = :isActive, updatedAt = :updatedAt",
       ExpressionAttributeValues: {
         ":trainingName": updated.trainingName,
         ":bodyPart": updated.bodyPart,
+        ":equipment": updated.equipment,
         ":normalizedTrainingName": updated.normalizedTrainingName,
         ":defaultWeightKg": updated.defaultWeightKg,
         ":defaultRepsMin": updated.defaultRepsMin,

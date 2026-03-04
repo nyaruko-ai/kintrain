@@ -813,6 +813,12 @@ a {
   max-width: 100%;
 }
 
+.menu-two-fields-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .menu-metrics-row {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -990,6 +996,11 @@ a {
 
   .menu-metrics-row {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .menu-two-fields-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
 

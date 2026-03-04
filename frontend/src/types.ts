@@ -10,6 +10,7 @@ export interface TrainingMenuItem {
   id: string;
   trainingName: string;
   bodyPart: string;
+  equipment: TrainingEquipment;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;
@@ -17,6 +18,8 @@ export interface TrainingMenuItem {
   order: number;
   isActive: boolean;
 }
+
+export type TrainingEquipment = 'マシン' | 'バーベル' | 'ダンベル' | 'ケトルベル' | '自重' | 'その他';
 
 export interface TrainingMenuSet {
   id: string;

@@ -208,7 +208,7 @@ trainingHistoryTable.grantReadData(dailyRecordApiLambda);
 goalTable.grantReadWriteData(dailyRecordApiLambda);
 aiSettingTable.grantReadWriteData(aiSettingsApiLambda);
 trainingHistoryTable.grantReadData(mcpToolsApiLambda);
-dailyRecordTable.grantReadData(mcpToolsApiLambda);
+dailyRecordTable.grantReadWriteData(mcpToolsApiLambda);
 goalTable.grantReadData(mcpToolsApiLambda);
 aiSettingTable.grantReadData(mcpToolsApiLambda);
 aiAdviceLogTable.grantWriteData(mcpToolsApiLambda);

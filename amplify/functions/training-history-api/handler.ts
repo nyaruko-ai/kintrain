@@ -17,6 +17,7 @@ type ExerciseEntry = {
   trainingMenuItemId?: string;
   trainingNameSnapshot: string;
   bodyPartSnapshot?: string;
+  equipmentSnapshot?: string;
   weightKg: number;
   reps: number;
   sets: number;
@@ -72,7 +73,8 @@ function validateEntries(entries: ExerciseEntry[] | undefined): boolean {
       isPositiveNumber(entry.sets) &&
       typeof entry.performedAtUtc === "string" &&
       entry.performedAtUtc.length > 0 &&
-      (entry.bodyPartSnapshot === undefined || typeof entry.bodyPartSnapshot === "string")
+      (entry.bodyPartSnapshot === undefined || typeof entry.bodyPartSnapshot === "string") &&
+      (entry.equipmentSnapshot === undefined || typeof entry.equipmentSnapshot === "string")
     );
   });
 }
@@ -80,10 +82,12 @@ function validateEntries(entries: ExerciseEntry[] | undefined): boolean {
 function normalizeEntries(entries: ExerciseEntry[]): ExerciseEntry[] {
   return entries.map((entry) => {
     const bodyPartSnapshot = toTrimmedString(entry.bodyPartSnapshot);
+    const equipmentSnapshot = toTrimmedString(entry.equipmentSnapshot);
     return {
       ...entry,
       trainingNameSnapshot: entry.trainingNameSnapshot.trim(),
-      bodyPartSnapshot
+      bodyPartSnapshot,
+      equipmentSnapshot
     };
   });
 }
@@ -259,6 +263,7 @@ async function getTrainingSessionView(event: APIGatewayProxyEvent, userId: strin
           reps: matched.reps,
           sets: matched.sets,
           bodyPartSnapshot: matched.bodyPartSnapshot ?? "",
+          equipmentSnapshot: matched.equipmentSnapshot ?? "",
           visitDateLocal: visit.visitDateLocal
         };
         break;
@@ -269,6 +274,8 @@ async function getTrainingSessionView(event: APIGatewayProxyEvent, userId: strin
       trainingMenuItemId,
       trainingName: menu.trainingName,
       bodyPart: typeof menu.bodyPart === "string" ? menu.bodyPart : "",
+      equipment: typeof menu.equipment === "string" ? menu.equipment : "",
+      frequency: typeof menu.frequency === "string" ? menu.frequency : "3日",
       defaultWeightKg: menu.defaultWeightKg,
       defaultRepsMin: repsRange.defaultRepsMin,
       defaultRepsMax: repsRange.defaultRepsMax,

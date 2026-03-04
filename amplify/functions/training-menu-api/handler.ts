@@ -31,6 +31,7 @@ type TrainingMenuItemInput = RepsRangeInput & {
   trainingName: string;
   bodyPart?: string;
   equipment?: string;
+  frequency?: string;
   defaultWeightKg: number;
   defaultSets: number;
 };
@@ -65,6 +66,8 @@ function toTrimmedString(value: unknown): string | undefined {
 
 const allowedEquipments = new Set(["マシン", "バーベル", "ダンベル", "ケトルベル", "自重", "その他"]);
 const defaultEquipment = "マシン";
+const allowedFrequencies = new Set(["毎日", "2日", "3日", "4日", "5日", "6日", "7日", "8日+"]);
+const defaultFrequency = "3日";
 
 function normalizeEquipment(value: unknown): string | undefined {
   if (value === undefined) {
@@ -75,6 +78,20 @@ function normalizeEquipment(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   if (!allowedEquipments.has(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function normalizeFrequency(value: unknown): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!allowedFrequencies.has(trimmed)) {
     return undefined;
   }
   return trimmed;
@@ -124,6 +141,7 @@ function toTrainingMenuResponse(item: Record<string, unknown>): Record<string, u
     trainingName: item.trainingName,
     bodyPart: typeof item.bodyPart === "string" ? item.bodyPart : "",
     equipment: typeof item.equipment === "string" ? item.equipment : defaultEquipment,
+    frequency: typeof item.frequency === "string" ? item.frequency : defaultFrequency,
     defaultWeightKg: item.defaultWeightKg,
     defaultRepsMin: repsRange.defaultRepsMin,
     defaultRepsMax: repsRange.defaultRepsMax,
@@ -362,6 +380,10 @@ async function createTrainingMenuItem(event: APIGatewayProxyEvent, userId: strin
   if (body.equipment !== undefined && !normalizeEquipment(body.equipment)) {
     return response(400, { message: "equipment must be one of マシン/バーベル/ダンベル/ケトルベル/自重/その他." });
   }
+  const frequency = normalizeFrequency(body.frequency) ?? defaultFrequency;
+  if (body.frequency !== undefined && !normalizeFrequency(body.frequency)) {
+    return response(400, { message: "frequency must be one of 毎日/2日/3日/4日/5日/6日/7日/8日+." });
+  }
 
   const repsRange = resolveRepsRange(body);
   if (!repsRange) {
@@ -395,6 +417,7 @@ async function createTrainingMenuItem(event: APIGatewayProxyEvent, userId: strin
         trainingName,
         bodyPart,
         equipment,
+        frequency,
         normalizedTrainingName,
         defaultWeightKg,
         defaultRepsMin: repsRange.defaultRepsMin,
@@ -415,6 +438,7 @@ async function createTrainingMenuItem(event: APIGatewayProxyEvent, userId: strin
     trainingName,
     bodyPart,
     equipment,
+    frequency,
     defaultWeightKg,
     defaultRepsMin: repsRange.defaultRepsMin,
     defaultRepsMax: repsRange.defaultRepsMax,
@@ -455,6 +479,7 @@ async function updateTrainingMenuItem(
   const currentName = String(current.trainingName ?? "");
   const currentBodyPart = typeof current.bodyPart === "string" ? current.bodyPart : "";
   const currentEquipment = typeof current.equipment === "string" ? current.equipment : defaultEquipment;
+  const currentFrequency = typeof current.frequency === "string" ? current.frequency : defaultFrequency;
   const nextName = toNonEmptyString(body.trainingName) ?? currentName;
   const nextBodyPartInput = toTrimmedString(body.bodyPart);
   const nextBodyPart = body.bodyPart !== undefined ? nextBodyPartInput ?? "" : currentBodyPart;
@@ -463,6 +488,11 @@ async function updateTrainingMenuItem(
     return response(400, { message: "equipment must be one of マシン/バーベル/ダンベル/ケトルベル/自重/その他." });
   }
   const nextEquipment = body.equipment !== undefined ? nextEquipmentNormalized ?? currentEquipment : currentEquipment;
+  const nextFrequencyNormalized = normalizeFrequency(body.frequency);
+  if (body.frequency !== undefined && !nextFrequencyNormalized) {
+    return response(400, { message: "frequency must be one of 毎日/2日/3日/4日/5日/6日/7日/8日+." });
+  }
+  const nextFrequency = body.frequency !== undefined ? nextFrequencyNormalized ?? currentFrequency : currentFrequency;
   const nextNormalizedName = normalizeTrainingName(nextName);
   const repsRange = resolveRepsRange(body, current);
 
@@ -491,6 +521,7 @@ async function updateTrainingMenuItem(
     trainingName: nextName,
     bodyPart: nextBodyPart,
     equipment: nextEquipment,
+    frequency: nextFrequency,
     normalizedTrainingName: nextNormalizedName,
     defaultWeightKg:
       body.defaultWeightKg !== undefined
@@ -512,11 +543,12 @@ async function updateTrainingMenuItem(
         trainingMenuItemId
       },
       UpdateExpression:
-        "SET trainingName = :trainingName, bodyPart = :bodyPart, equipment = :equipment, normalizedTrainingName = :normalizedTrainingName, defaultWeightKg = :defaultWeightKg, defaultRepsMin = :defaultRepsMin, defaultRepsMax = :defaultRepsMax, defaultReps = :defaultReps, defaultSets = :defaultSets, isActive = :isActive, updatedAt = :updatedAt",
+        "SET trainingName = :trainingName, bodyPart = :bodyPart, equipment = :equipment, frequency = :frequency, normalizedTrainingName = :normalizedTrainingName, defaultWeightKg = :defaultWeightKg, defaultRepsMin = :defaultRepsMin, defaultRepsMax = :defaultRepsMax, defaultReps = :defaultReps, defaultSets = :defaultSets, isActive = :isActive, updatedAt = :updatedAt",
       ExpressionAttributeValues: {
         ":trainingName": updated.trainingName,
         ":bodyPart": updated.bodyPart,
         ":equipment": updated.equipment,
+        ":frequency": updated.frequency,
         ":normalizedTrainingName": updated.normalizedTrainingName,
         ":defaultWeightKg": updated.defaultWeightKg,
         ":defaultRepsMin": updated.defaultRepsMin,

@@ -11,6 +11,7 @@ export interface TrainingMenuItem {
   trainingName: string;
   bodyPart: string;
   equipment: TrainingEquipment;
+  frequency: TrainingFrequency;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;
@@ -20,6 +21,7 @@ export interface TrainingMenuItem {
 }
 
 export type TrainingEquipment = 'マシン' | 'バーベル' | 'ダンベル' | 'ケトルベル' | '自重' | 'その他';
+export type TrainingFrequency = '毎日' | '2日' | '3日' | '4日' | '5日' | '6日' | '7日' | '8日+';
 
 export interface TrainingMenuSet {
   id: string;
@@ -35,6 +37,7 @@ export interface ExerciseEntry {
   menuItemId: string;
   trainingName: string;
   bodyPart: string;
+  equipment: string;
   weightKg: number;
   reps: number;
   sets: number;

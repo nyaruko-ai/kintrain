@@ -9,10 +9,11 @@ export interface LastPerformance {
   sets: number;
 }
 
-export function formatTrainingLabel(trainingName: string, bodyPart?: string): string {
+export function formatTrainingLabel(trainingName: string, bodyPart?: string, equipment?: string): string {
   const name = (trainingName ?? '').trim();
   const part = (bodyPart ?? '').trim();
-  return `${name} : ${part || '未設定'}`;
+  const tool = (equipment ?? '').trim();
+  return `${name} : ${part || '未設定'} : ${tool || '未設定'}`;
 }
 
 export function getLastPerformance(menuItemId: string, gymVisits: GymVisit[]): LastPerformance | null {
@@ -32,71 +33,55 @@ export function getLastPerformance(menuItemId: string, gymVisits: GymVisit[]): L
   return null;
 }
 
-export function getYesterdayMenuIds(todayYmd: string, gymVisits: GymVisit[]): Set<string> {
-  const set = new Set<string>();
-  const sorted = [...gymVisits].sort((a, b) => a.date.localeCompare(b.date));
-  if (sorted.length === 0) {
-    return set;
+function getFrequencyDays(label: TrainingMenuItem['frequency']): number {
+  switch (label) {
+    case '毎日':
+      return 1;
+    case '2日':
+      return 2;
+    case '3日':
+      return 3;
+    case '4日':
+      return 4;
+    case '5日':
+      return 5;
+    case '6日':
+      return 6;
+    case '7日':
+      return 7;
+    case '8日+':
+      return 8;
+    default:
+      return 3;
   }
-
-  const latestPastVisit = [...sorted]
-    .filter((visit) => visit.date < todayYmd)
-    .slice(-1)
-    .at(0);
-
-  if (!latestPastVisit) {
-    return set;
-  }
-
-  const latestDate = latestPastVisit.date;
-  if (diffDays(latestDate, todayYmd) !== 1) {
-    return set;
-  }
-
-  sorted
-    .filter((visit) => visit.date === latestDate)
-    .forEach((visit) => {
-      visit.entries.forEach((entry) => set.add(entry.menuItemId));
-    });
-
-  return set;
-}
-
-export function getTodayDoneIds(todayYmd: string, gymVisits: GymVisit[]): Set<string> {
-  const done = new Set<string>();
-  gymVisits
-    .filter((visit) => visit.date === todayYmd)
-    .forEach((visit) => visit.entries.forEach((entry) => done.add(entry.menuItemId)));
-  return done;
 }
 
 function scoreItem(params: {
   item: TrainingMenuItem;
   todayYmd: string;
   gymVisits: GymVisit[];
-  yesterdayIds: Set<string>;
-  todayDoneIds: Set<string>;
-}): number {
-  const { item, todayYmd, gymVisits, yesterdayIds, todayDoneIds } = params;
+}): {
+  neverDone: boolean;
+  overdueDays: number;
+  daysSinceLast: number;
+} {
+  const { item, todayYmd, gymVisits } = params;
   const last = getLastPerformance(item.id, gymVisits);
-  let score = 1000 - item.order * 2;
-
-  if (last) {
-    const days = Math.max(0, diffDays(last.date, todayYmd));
-    score += Math.min(60, days * 3);
-  } else {
-    score += 80;
+  if (!last) {
+    return {
+      neverDone: true,
+      overdueDays: Number.POSITIVE_INFINITY,
+      daysSinceLast: Number.MAX_SAFE_INTEGER
+    };
   }
 
-  if (yesterdayIds.has(item.id)) {
-    score -= 120;
-  }
-
-  if (todayDoneIds.has(item.id)) {
-    score -= 60;
-  }
-
-  return score;
+  const daysSinceLast = Math.max(0, diffDays(last.date, todayYmd));
+  const intervalDays = getFrequencyDays(item.frequency);
+  return {
+    neverDone: false,
+    overdueDays: daysSinceLast - intervalDays,
+    daysSinceLast
+  };
 }
 
 export function getPrioritizedMenuItems(params: {
@@ -105,8 +90,6 @@ export function getPrioritizedMenuItems(params: {
   todayYmd: string;
 }): TrainingMenuItem[] {
   const { menuItems, gymVisits, todayYmd } = params;
-  const yesterdayIds = getYesterdayMenuIds(todayYmd, gymVisits);
-  const todayDoneIds = getTodayDoneIds(todayYmd, gymVisits);
 
   return [...menuItems]
     .filter((item) => item.isActive)
@@ -114,19 +97,21 @@ export function getPrioritizedMenuItems(params: {
       const scoreA = scoreItem({
         item: a,
         todayYmd,
-        gymVisits,
-        yesterdayIds,
-        todayDoneIds
+        gymVisits
       });
       const scoreB = scoreItem({
         item: b,
         todayYmd,
-        gymVisits,
-        yesterdayIds,
-        todayDoneIds
+        gymVisits
       });
-      if (scoreA !== scoreB) {
-        return scoreB - scoreA;
+      if (scoreA.neverDone !== scoreB.neverDone) {
+        return scoreA.neverDone ? -1 : 1;
+      }
+      if (scoreA.overdueDays !== scoreB.overdueDays) {
+        return scoreB.overdueDays - scoreA.overdueDays;
+      }
+      if (scoreA.daysSinceLast !== scoreB.daysSinceLast) {
+        return scoreB.daysSinceLast - scoreA.daysSinceLast;
       }
       return a.order - b.order;
     });

@@ -813,9 +813,9 @@ a {
   max-width: 100%;
 }
 
-.menu-two-fields-row {
+.menu-three-fields-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -999,8 +999,8 @@ a {
     gap: 8px;
   }
 
-  .menu-two-fields-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .menu-three-fields-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
   }
 

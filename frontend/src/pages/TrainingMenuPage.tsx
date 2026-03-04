@@ -1,10 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppState } from '../AppState';
-import type { TrainingEquipment, TrainingMenuItem } from '../types';
+import type { TrainingEquipment, TrainingFrequency, TrainingMenuItem } from '../types';
 
 const CREATE_NEW_SET_OPTION = '__create_new_set__';
 const TRAINING_EQUIPMENT_OPTIONS: TrainingEquipment[] = ['マシン', 'バーベル', 'ダンベル', 'ケトルベル', '自重', 'その他'];
+const TRAINING_FREQUENCY_OPTIONS: TrainingFrequency[] = ['毎日', '2日', '3日', '4日', '5日', '6日', '7日', '8日+'];
 
 export function TrainingMenuPage() {
   const {
@@ -84,6 +85,7 @@ export function TrainingMenuPage() {
     const trainingName = String(formData.get('trainingName') ?? '').trim();
     const bodyPart = String(formData.get('bodyPart') ?? '').trim();
     const equipment = String(formData.get('equipment') ?? '').trim() as TrainingEquipment;
+    const frequency = String(formData.get('frequency') ?? '').trim() as TrainingFrequency;
     if (!trainingName) {
       setStatusText('トレーニング名を入力してください。');
       return false;
@@ -93,6 +95,7 @@ export function TrainingMenuPage() {
         trainingName,
         bodyPart,
         equipment: TRAINING_EQUIPMENT_OPTIONS.includes(equipment) ? equipment : 'マシン',
+        frequency: TRAINING_FREQUENCY_OPTIONS.includes(frequency) ? frequency : '3日',
         defaultWeightKg: Number(formData.get('defaultWeightKg') ?? 0),
         defaultRepsMin: Number(formData.get('defaultRepsMin') ?? 0),
         defaultRepsMax: Number(formData.get('defaultRepsMax') ?? 0),
@@ -266,7 +269,7 @@ export function TrainingMenuPage() {
               トレーニング名
               <input name="trainingName" required />
             </label>
-            <div className="menu-two-fields-row">
+            <div className="menu-three-fields-row">
               <label>
                 鍛える部位
                 <input name="bodyPart" placeholder="例: 胸 / 背中 / 脚" />
@@ -277,6 +280,16 @@ export function TrainingMenuPage() {
                   {TRAINING_EQUIPMENT_OPTIONS.map((equipment) => (
                     <option key={equipment} value={equipment}>
                       {equipment}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                頻度
+                <select name="frequency" defaultValue="3日" required>
+                  {TRAINING_FREQUENCY_OPTIONS.map((frequency) => (
+                    <option key={frequency} value={frequency}>
+                      {frequency}
                     </option>
                   ))}
                 </select>
@@ -390,7 +403,7 @@ function MenuItemCard({
   return (
     <article className="card">
       <div className="menu-item-header-under">
-        <p className="priority-chip">優先 {order}</p>
+        <p className="priority-chip">#{order}</p>
         <div className="menu-item-actions-under">
           <button type="button" className="btn subtle menu-item-icon-button" onClick={onMoveUp} aria-label="上へ移動">
             ↑
@@ -412,7 +425,7 @@ function MenuItemCard({
           トレーニング名
           <input value={item.trainingName} onChange={(e) => onUpdate({ trainingName: e.target.value })} />
         </label>
-        <div className="menu-two-fields-row">
+        <div className="menu-three-fields-row">
           <label>
             鍛える部位
             <input
@@ -434,6 +447,23 @@ function MenuItemCard({
               {TRAINING_EQUIPMENT_OPTIONS.map((equipment) => (
                 <option key={equipment} value={equipment}>
                   {equipment}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            頻度
+            <select
+              value={item.frequency}
+              onChange={(e) =>
+                onUpdate({
+                  frequency: e.target.value as TrainingFrequency
+                })
+              }
+            >
+              {TRAINING_FREQUENCY_OPTIONS.map((frequency) => (
+                <option key={frequency} value={frequency}>
+                  {frequency}
                 </option>
               ))}
             </select>

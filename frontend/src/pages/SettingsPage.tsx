@@ -396,7 +396,7 @@ export function SettingsPage() {
             <h3 id="avatar-delete-title">
               {deleteAvatarTarget === 'user' ? 'ユーザアイコン画像を削除しますか？' : 'AIコーチアイコン画像を削除しますか？'}
             </h3>
-            <p>削除すると既存画像はS3から削除され、再度選択しない限り元に戻せません。</p>
+            <p>削除するともとに戻せません。</p>
             <div className="overlay-modal-actions">
               <button
                 type="button"

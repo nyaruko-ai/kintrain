@@ -17,6 +17,7 @@ type ExerciseEntry = {
   trainingMenuItemId?: string;
   trainingNameSnapshot: string;
   bodyPartSnapshot?: string;
+  equipmentSnapshot?: string;
   weightKg: number;
   reps: number;
   sets: number;
@@ -47,6 +48,26 @@ function toRepsRange(menu: Record<string, unknown>): { defaultRepsMin: number; d
   };
 }
 
+function toFrequencyDays(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 1) {
+    return Math.min(8, Math.floor(value));
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "毎日") {
+      return 1;
+    }
+    if (trimmed === "8日+" || trimmed === "8+") {
+      return 8;
+    }
+    const numeric = Number(trimmed.replace(/[^\d]/g, ""));
+    if (Number.isFinite(numeric) && numeric >= 1) {
+      return Math.min(8, Math.floor(numeric));
+    }
+  }
+  return 3;
+}
+
 function isPositiveNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
@@ -72,7 +93,8 @@ function validateEntries(entries: ExerciseEntry[] | undefined): boolean {
       isPositiveNumber(entry.sets) &&
       typeof entry.performedAtUtc === "string" &&
       entry.performedAtUtc.length > 0 &&
-      (entry.bodyPartSnapshot === undefined || typeof entry.bodyPartSnapshot === "string")
+      (entry.bodyPartSnapshot === undefined || typeof entry.bodyPartSnapshot === "string") &&
+      (entry.equipmentSnapshot === undefined || typeof entry.equipmentSnapshot === "string")
     );
   });
 }
@@ -80,10 +102,12 @@ function validateEntries(entries: ExerciseEntry[] | undefined): boolean {
 function normalizeEntries(entries: ExerciseEntry[]): ExerciseEntry[] {
   return entries.map((entry) => {
     const bodyPartSnapshot = toTrimmedString(entry.bodyPartSnapshot);
+    const equipmentSnapshot = toTrimmedString(entry.equipmentSnapshot);
     return {
       ...entry,
       trainingNameSnapshot: entry.trainingNameSnapshot.trim(),
-      bodyPartSnapshot
+      bodyPartSnapshot,
+      equipmentSnapshot
     };
   });
 }
@@ -259,6 +283,7 @@ async function getTrainingSessionView(event: APIGatewayProxyEvent, userId: strin
           reps: matched.reps,
           sets: matched.sets,
           bodyPartSnapshot: matched.bodyPartSnapshot ?? "",
+          equipmentSnapshot: matched.equipmentSnapshot ?? "",
           visitDateLocal: visit.visitDateLocal
         };
         break;
@@ -269,6 +294,8 @@ async function getTrainingSessionView(event: APIGatewayProxyEvent, userId: strin
       trainingMenuItemId,
       trainingName: menu.trainingName,
       bodyPart: typeof menu.bodyPart === "string" ? menu.bodyPart : "",
+      equipment: typeof menu.equipment === "string" ? menu.equipment : "",
+      frequency: toFrequencyDays(menu.frequency),
       defaultWeightKg: menu.defaultWeightKg,
       defaultRepsMin: repsRange.defaultRepsMin,
       defaultRepsMax: repsRange.defaultRepsMax,

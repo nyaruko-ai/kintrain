@@ -38,6 +38,8 @@ import type {
   ExerciseEntry,
   Goal,
   SetDetail,
+  TrainingEquipment,
+  TrainingFrequencyDays,
   TrainingMenuSet,
   TrainingMenuItem,
   UserProfile
@@ -97,6 +99,38 @@ interface AppStateContextValue {
 }
 
 const AppStateContext = createContext<AppStateContextValue | null>(null);
+
+const defaultTrainingEquipment: TrainingEquipment = 'マシン';
+const trainingEquipmentValues: TrainingEquipment[] = ['マシン', 'バーベル', 'ダンベル', 'ケトルベル', '自重', 'その他'];
+const defaultTrainingFrequency: TrainingFrequencyDays = 3;
+const trainingFrequencyValues: TrainingFrequencyDays[] = [1, 2, 3, 4, 5, 6, 7, 8];
+
+function normalizeTrainingEquipment(value: unknown): TrainingEquipment {
+  if (typeof value === 'string' && trainingEquipmentValues.includes(value as TrainingEquipment)) {
+    return value as TrainingEquipment;
+  }
+  return defaultTrainingEquipment;
+}
+
+function normalizeTrainingFrequency(value: unknown): TrainingFrequencyDays {
+  if (typeof value === 'number' && Number.isInteger(value) && trainingFrequencyValues.includes(value as TrainingFrequencyDays)) {
+    return value as TrainingFrequencyDays;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '毎日') {
+      return 1;
+    }
+    if (trimmed === '8日+' || trimmed === '8+') {
+      return 8;
+    }
+    const numeric = Number(trimmed.replace(/[^\d]/g, ''));
+    if (Number.isInteger(numeric) && trainingFrequencyValues.includes(numeric as TrainingFrequencyDays)) {
+      return numeric as TrainingFrequencyDays;
+    }
+  }
+  return defaultTrainingFrequency;
+}
 
 function getDefaultDailySaveStatus(): DailySaveStatus {
   return {
@@ -252,12 +286,14 @@ function normalizeAppData(rawData: AppData): AppData {
   );
 
   const sourceMenuItems = (legacy.menuItems ?? initialAppData.menuItems) as Array<
-    TrainingMenuItem & { machineName?: string; defaultReps?: number }
+    TrainingMenuItem & { machineName?: string; defaultReps?: number; frequency?: unknown }
   >;
   const normalizedMenuItems = sourceMenuItems.map((item) => ({
     ...item,
     trainingName: item.trainingName ?? item.machineName ?? '未設定トレーニング',
     bodyPart: item.bodyPart ?? '',
+    equipment: normalizeTrainingEquipment((item as TrainingMenuItem & { equipment?: unknown }).equipment),
+    frequency: normalizeTrainingFrequency(item.frequency),
     ...normalizeRepsRange(item)
   }));
   const normalizedMenuSetState = normalizeMenuSets(normalizedMenuItems, legacy.menuSets, legacy.activeTrainingMenuSetId);
@@ -275,7 +311,10 @@ function normalizeAppData(rawData: AppData): AppData {
     entries: visit.entries.map((entry) => ({
       ...entry,
       trainingName: entry.trainingName ?? entry.machineName ?? '未設定トレーニング',
-      bodyPart: entry.bodyPart ?? ''
+      bodyPart: entry.bodyPart ?? '',
+      equipment: typeof (entry as ExerciseEntry & { equipment?: unknown }).equipment === 'string'
+        ? ((entry as ExerciseEntry & { equipment?: string }).equipment ?? '')
+        : ''
     }))
   }));
 
@@ -320,6 +359,8 @@ function mapRemoteMenuItem(item: {
   trainingMenuItemId: string;
   trainingName: string;
   bodyPart?: string;
+  equipment?: string;
+  frequency?: number | string;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;
@@ -333,6 +374,8 @@ function mapRemoteMenuItem(item: {
     id: item.trainingMenuItemId,
     trainingName: item.trainingName,
     bodyPart: item.bodyPart ?? '',
+    equipment: normalizeTrainingEquipment(item.equipment),
+    frequency: normalizeTrainingFrequency(item.frequency),
     defaultWeightKg: Number(item.defaultWeightKg),
     defaultRepsMin: repsRange.defaultRepsMin,
     defaultRepsMax: repsRange.defaultRepsMax,
@@ -371,6 +414,7 @@ function mapRemoteGymVisit(visit: {
     trainingMenuItemId?: string;
     trainingNameSnapshot?: string;
     bodyPartSnapshot?: string;
+    equipmentSnapshot?: string;
     weightKg?: number;
     reps?: number;
     sets?: number;
@@ -388,6 +432,7 @@ function mapRemoteGymVisit(visit: {
     menuItemId: entry.trainingMenuItemId ?? '',
     trainingName: entry.trainingNameSnapshot ?? '不明トレーニング',
     bodyPart: entry.bodyPartSnapshot ?? '',
+    equipment: typeof entry.equipmentSnapshot === 'string' ? entry.equipmentSnapshot : '',
     weightKg: Number(entry.weightKg ?? 0),
     reps: Number(entry.reps ?? 0),
     sets: Number(entry.sets ?? 0)
@@ -809,6 +854,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
               menuItemId: entry.menuItemId,
               trainingName: menuItem?.trainingName ?? '不明トレーニング',
               bodyPart: menuItem?.bodyPart ?? '',
+              equipment: menuItem?.equipment ?? '',
               weightKg: entry.weightKg ?? 0,
               reps: entry.reps ?? 0,
               sets: entry.sets ?? 0,
@@ -839,6 +885,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
               trainingMenuItemId: entry.menuItemId,
               trainingNameSnapshot: entry.trainingName,
               bodyPartSnapshot: entry.bodyPart.trim() || undefined,
+              equipmentSnapshot: entry.equipment.trim() || undefined,
               weightKg: entry.weightKg,
               reps: entry.reps,
               sets: entry.sets,
@@ -1012,6 +1059,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         const payload = {
           trainingName: item.trainingName.trim(),
           bodyPart: item.bodyPart.trim(),
+          equipment: normalizeTrainingEquipment(item.equipment),
+          frequency: normalizeTrainingFrequency(item.frequency),
           defaultWeightKg: Math.round(item.defaultWeightKg * 100) / 100,
           defaultRepsMin: Math.floor(item.defaultRepsMin),
           defaultRepsMax: Math.floor(item.defaultRepsMax),
@@ -1075,6 +1124,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         void updateTrainingMenuItemApi(itemId, {
           trainingName: nextItem.trainingName.trim(),
           bodyPart: nextItem.bodyPart.trim(),
+          equipment: normalizeTrainingEquipment(nextItem.equipment),
+          frequency: normalizeTrainingFrequency(nextItem.frequency),
           defaultWeightKg: Math.round(nextItem.defaultWeightKg * 100) / 100,
           defaultRepsMin: Math.floor(nextItem.defaultRepsMin),
           defaultRepsMax: Math.floor(nextItem.defaultRepsMax),

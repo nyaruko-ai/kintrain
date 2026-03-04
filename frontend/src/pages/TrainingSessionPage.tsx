@@ -127,7 +127,7 @@ export function TrainingSessionPage() {
               <div className="training-item-head">
                 <div>
                   <p className="priority-chip">優先 {index + 1}</p>
-                  <h2>{formatTrainingLabel(item.trainingName, item.bodyPart)}</h2>
+                  <h2>{formatTrainingLabel(item.trainingName, item.bodyPart, item.equipment)}</h2>
                   <p className="muted">
                     直近:{' '}
                     {last

@@ -14,6 +14,8 @@ type TrainingMenuItemDto = {
   trainingMenuItemId: string;
   trainingName: string;
   bodyPart?: string;
+  equipment?: string;
+  frequency?: number | string;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;
@@ -49,6 +51,7 @@ type GymVisitEntryInput = {
   trainingMenuItemId: string;
   trainingNameSnapshot: string;
   bodyPartSnapshot?: string;
+  equipmentSnapshot?: string;
   weightKg: number;
   reps: number;
   sets: number;
@@ -218,6 +221,8 @@ export async function listTrainingMenuItems(): Promise<ListTrainingMenuItemsResp
 export async function createTrainingMenuItem(input: {
   trainingName: string;
   bodyPart?: string;
+  equipment?: string;
+  frequency?: number;
   defaultWeightKg: number;
   defaultRepsMin: number;
   defaultRepsMax: number;
@@ -235,6 +240,8 @@ export async function updateTrainingMenuItem(
   input: Partial<{
     trainingName: string;
     bodyPart: string;
+    equipment: string;
+    frequency: number;
     defaultWeightKg: number;
     defaultRepsMin: number;
     defaultRepsMax: number;

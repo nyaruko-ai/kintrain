@@ -821,6 +821,33 @@ a {
   max-width: 100%;
 }
 
+.menu-training-name-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.menu-ai-generated-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: end;
+  padding: 0 4px 10px 0;
+  white-space: nowrap;
+}
+
+.menu-ai-generated-check input {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  margin: 0;
+}
+
+.menu-ai-generated-check span {
+  font-size: 0.86rem;
+}
+
 .menu-training-note-field textarea {
   min-height: calc(1.5em + 20px);
   resize: none;
@@ -1010,6 +1037,15 @@ a {
   .menu-metrics-row {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
+  }
+
+  .menu-training-name-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .menu-ai-generated-check {
+    padding-bottom: 8px;
   }
 
   .menu-three-fields-row {

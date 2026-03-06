@@ -31,6 +31,7 @@ type TrainingMenuItemInput = RepsRangeInput & {
   trainingName: string;
   bodyPart?: string;
   equipment?: string;
+  isAiGenerated?: boolean;
   memo?: string;
   frequency?: number;
   defaultWeightKg: number;
@@ -186,6 +187,7 @@ function toTrainingMenuResponse(item: Record<string, unknown>): Record<string, u
     trainingName: item.trainingName,
     bodyPart: typeof item.bodyPart === "string" ? item.bodyPart : "",
     equipment: normalizeEquipment(item.equipment) ?? defaultEquipment,
+    isAiGenerated: item.isAiGenerated === true,
     memo: toMemo(item.memo),
     frequency: normalizeFrequency(item.frequency) ?? defaultFrequency,
     defaultWeightKg: item.defaultWeightKg,
@@ -422,6 +424,7 @@ async function createTrainingMenuItem(event: APIGatewayProxyEvent, userId: strin
     return response(400, { message: "trainingName is required." });
   }
   const bodyPart = toTrimmedString(body.bodyPart) ?? "";
+  const isAiGenerated = body.isAiGenerated === true;
   const memoParsed = parseMemo(body.memo);
   if (!memoParsed.ok) {
     return response(400, { message: "memo must be a string up to 500 characters." });
@@ -468,6 +471,7 @@ async function createTrainingMenuItem(event: APIGatewayProxyEvent, userId: strin
         trainingName,
         bodyPart,
         equipment,
+        isAiGenerated,
         memo,
         frequency,
         normalizedTrainingName,
@@ -490,6 +494,7 @@ async function createTrainingMenuItem(event: APIGatewayProxyEvent, userId: strin
     trainingName,
     bodyPart,
     equipment,
+    isAiGenerated,
     memo,
     frequency,
     defaultWeightKg,
@@ -532,6 +537,7 @@ async function updateTrainingMenuItem(
   const currentName = String(current.trainingName ?? "");
   const currentBodyPart = typeof current.bodyPart === "string" ? current.bodyPart : "";
   const currentEquipment = normalizeEquipment(current.equipment) ?? defaultEquipment;
+  const currentIsAiGenerated = current.isAiGenerated === true;
   const currentMemo = toMemo(current.memo);
   const currentFrequency = normalizeFrequency(current.frequency) ?? defaultFrequency;
   const nextName = toNonEmptyString(body.trainingName) ?? currentName;
@@ -547,6 +553,7 @@ async function updateTrainingMenuItem(
     return response(400, { message: "equipment must be one of マシン/フリー/自重/その他." });
   }
   const nextEquipment = body.equipment !== undefined ? nextEquipmentNormalized ?? currentEquipment : currentEquipment;
+  const nextIsAiGenerated = body.isAiGenerated !== undefined ? body.isAiGenerated === true : currentIsAiGenerated;
   const nextFrequencyNormalized = normalizeFrequency(body.frequency);
   if (body.frequency !== undefined && !nextFrequencyNormalized) {
     return response(400, { message: "frequency must be one of 1..8 (8 means 8日+)." });
@@ -580,6 +587,7 @@ async function updateTrainingMenuItem(
     trainingName: nextName,
     bodyPart: nextBodyPart,
     equipment: nextEquipment,
+    isAiGenerated: nextIsAiGenerated,
     memo: nextMemo,
     frequency: nextFrequency,
     normalizedTrainingName: nextNormalizedName,
@@ -603,11 +611,12 @@ async function updateTrainingMenuItem(
         trainingMenuItemId
       },
       UpdateExpression:
-        "SET trainingName = :trainingName, bodyPart = :bodyPart, equipment = :equipment, memo = :memo, frequency = :frequency, normalizedTrainingName = :normalizedTrainingName, defaultWeightKg = :defaultWeightKg, defaultRepsMin = :defaultRepsMin, defaultRepsMax = :defaultRepsMax, defaultReps = :defaultReps, defaultSets = :defaultSets, isActive = :isActive, updatedAt = :updatedAt",
+        "SET trainingName = :trainingName, bodyPart = :bodyPart, equipment = :equipment, isAiGenerated = :isAiGenerated, memo = :memo, frequency = :frequency, normalizedTrainingName = :normalizedTrainingName, defaultWeightKg = :defaultWeightKg, defaultRepsMin = :defaultRepsMin, defaultRepsMax = :defaultRepsMax, defaultReps = :defaultReps, defaultSets = :defaultSets, isActive = :isActive, updatedAt = :updatedAt",
       ExpressionAttributeValues: {
         ":trainingName": updated.trainingName,
         ":bodyPart": updated.bodyPart,
         ":equipment": updated.equipment,
+        ":isAiGenerated": updated.isAiGenerated,
         ":memo": updated.memo,
         ":frequency": updated.frequency,
         ":normalizedTrainingName": updated.normalizedTrainingName,

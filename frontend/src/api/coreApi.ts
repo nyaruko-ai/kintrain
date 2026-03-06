@@ -15,6 +15,7 @@ type TrainingMenuItemDto = {
   trainingName: string;
   bodyPart?: string;
   equipment?: string;
+  isAiGenerated?: boolean;
   memo?: string;
   frequency?: number | string;
   defaultWeightKg: number;
@@ -236,6 +237,7 @@ export async function createTrainingMenuItem(input: {
   trainingName: string;
   bodyPart?: string;
   equipment?: string;
+  isAiGenerated?: boolean;
   memo?: string;
   frequency?: number;
   defaultWeightKg: number;
@@ -256,6 +258,7 @@ export async function updateTrainingMenuItem(
     trainingName: string;
     bodyPart: string;
     equipment: string;
+    isAiGenerated: boolean;
     memo: string;
     frequency: number;
     defaultWeightKg: number;

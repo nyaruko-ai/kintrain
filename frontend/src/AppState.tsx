@@ -126,6 +126,10 @@ function normalizeTrainingMemo(value: unknown): string {
   return value.trim();
 }
 
+function normalizeAiGeneratedFlag(value: unknown): boolean {
+  return value === true;
+}
+
 function normalizeTrainingFrequency(value: unknown): TrainingFrequencyDays {
   if (typeof value === 'number' && Number.isInteger(value) && trainingFrequencyValues.includes(value as TrainingFrequencyDays)) {
     return value as TrainingFrequencyDays;
@@ -300,13 +304,14 @@ function normalizeAppData(rawData: AppData): AppData {
   );
 
   const sourceMenuItems = (legacy.menuItems ?? initialAppData.menuItems) as Array<
-    TrainingMenuItem & { machineName?: string; defaultReps?: number; frequency?: unknown; memo?: unknown }
+    TrainingMenuItem & { machineName?: string; defaultReps?: number; frequency?: unknown; memo?: unknown; isAiGenerated?: unknown }
   >;
   const normalizedMenuItems = sourceMenuItems.map((item) => ({
     ...item,
     trainingName: item.trainingName ?? item.machineName ?? '未設定トレーニング',
     bodyPart: item.bodyPart ?? '',
     equipment: normalizeTrainingEquipment((item as TrainingMenuItem & { equipment?: unknown }).equipment),
+    isAiGenerated: normalizeAiGeneratedFlag(item.isAiGenerated),
     memo: normalizeTrainingMemo(item.memo),
     frequency: normalizeTrainingFrequency(item.frequency),
     ...normalizeRepsRange(item)
@@ -375,6 +380,7 @@ function mapRemoteMenuItem(item: {
   trainingName: string;
   bodyPart?: string;
   equipment?: string;
+  isAiGenerated?: boolean;
   memo?: string;
   frequency?: number | string;
   defaultWeightKg: number;
@@ -391,6 +397,7 @@ function mapRemoteMenuItem(item: {
     trainingName: item.trainingName,
     bodyPart: item.bodyPart ?? '',
     equipment: normalizeTrainingEquipment(item.equipment),
+    isAiGenerated: normalizeAiGeneratedFlag(item.isAiGenerated),
     memo: normalizeTrainingMemo(item.memo),
     frequency: normalizeTrainingFrequency(item.frequency),
     defaultWeightKg: Number(item.defaultWeightKg),
@@ -1139,6 +1146,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           trainingName: item.trainingName.trim(),
           bodyPart: item.bodyPart.trim(),
           equipment: normalizeTrainingEquipment(item.equipment),
+          isAiGenerated: normalizeAiGeneratedFlag(item.isAiGenerated),
           memo: normalizeTrainingMemo(item.memo),
           frequency: normalizeTrainingFrequency(item.frequency),
           defaultWeightKg: Math.round(item.defaultWeightKg * 100) / 100,
@@ -1205,6 +1213,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           trainingName: nextItem.trainingName.trim(),
           bodyPart: nextItem.bodyPart.trim(),
           equipment: normalizeTrainingEquipment(nextItem.equipment),
+          isAiGenerated: normalizeAiGeneratedFlag(nextItem.isAiGenerated),
           memo: normalizeTrainingMemo(nextItem.memo),
           frequency: normalizeTrainingFrequency(nextItem.frequency),
           defaultWeightKg: Math.round(nextItem.defaultWeightKg * 100) / 100,

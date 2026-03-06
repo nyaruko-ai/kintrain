@@ -10,11 +10,17 @@ export interface LastPerformance {
   note?: string;
 }
 
-export function formatTrainingLabel(trainingName: string, bodyPart?: string, equipment?: string): string {
+export function formatTrainingLabel(
+  trainingName: string,
+  bodyPart?: string,
+  equipment?: string,
+  isAiGenerated?: boolean
+): string {
   const name = (trainingName ?? '').trim();
   const part = (bodyPart ?? '').trim();
   const tool = (equipment ?? '').trim();
-  return `${name} : ${part || '未設定'} : ${tool || '未設定'}`;
+  const suffix = isAiGenerated ? ' (AI生成)' : '';
+  return `${name} : ${part || '未設定'} : ${tool || '未設定'}${suffix}`;
 }
 
 export function getLastPerformance(menuItemId: string, gymVisits: GymVisit[]): LastPerformance | null {

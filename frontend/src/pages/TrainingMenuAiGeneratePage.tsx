@@ -101,6 +101,7 @@ export function TrainingMenuAiGeneratePage() {
                   trainingName: item.trainingName,
                   bodyPart: '',
                   equipment: item.equipment,
+                  isAiGenerated: true,
                   memo: '',
                   frequency: item.frequency,
                   defaultWeightKg: item.defaultWeightKg,

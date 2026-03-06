@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppState } from '../AppState';
 import type { TrainingEquipment, TrainingFrequencyDays, TrainingMenuItem } from '../types';
+import { formatTrainingLabel } from '../utils/training';
 
 const CREATE_NEW_SET_OPTION = '__create_new_set__';
 const TRAINING_EQUIPMENT_OPTIONS: TrainingEquipment[] = ['マシン', 'フリー', '自重', 'その他'];
@@ -95,6 +96,7 @@ export function TrainingMenuPage() {
     const trainingName = String(formData.get('trainingName') ?? '').trim();
     const bodyPart = String(formData.get('bodyPart') ?? '').trim();
     const equipment = String(formData.get('equipment') ?? '').trim() as TrainingEquipment;
+    const isAiGenerated = formData.get('isAiGenerated') === 'on';
     const memo = String(formData.get('memo') ?? '').trim();
     const frequency = Number(formData.get('frequency') ?? 0) as TrainingFrequencyDays;
     if (!trainingName) {
@@ -106,6 +108,7 @@ export function TrainingMenuPage() {
         trainingName,
         bodyPart,
         equipment: TRAINING_EQUIPMENT_OPTIONS.includes(equipment) ? equipment : 'マシン',
+        isAiGenerated,
         memo,
         frequency: TRAINING_FREQUENCY_OPTIONS.includes(frequency) ? frequency : 3,
         defaultWeightKg: Number(formData.get('defaultWeightKg') ?? 0),
@@ -277,10 +280,16 @@ export function TrainingMenuPage() {
               }
             }}
           >
-            <label className="menu-training-name-field">
-              トレーニング名
-              <input name="trainingName" required />
-            </label>
+            <div className="menu-training-name-row">
+              <label className="menu-training-name-field">
+                トレーニング名
+                <input name="trainingName" required />
+              </label>
+              <label className="menu-ai-generated-check">
+                <input name="isAiGenerated" type="checkbox" />
+                <span>AI生成</span>
+              </label>
+            </div>
             <div className="menu-three-fields-row">
               <label>
                 鍛える部位
@@ -341,7 +350,7 @@ export function TrainingMenuPage() {
                 <option value="">種目を選択</option>
                 {addableExistingItems.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.trainingName}
+                    {formatTrainingLabel(item.trainingName, item.bodyPart, item.equipment, item.isAiGenerated)}
                   </option>
                 ))}
               </select>
@@ -437,10 +446,20 @@ function MenuItemCard({
       </div>
 
       <div className="menu-item-editor">
-        <label className="menu-training-name-field">
-          トレーニング名
-          <input value={item.trainingName} onChange={(e) => onUpdate({ trainingName: e.target.value })} />
-        </label>
+        <div className="menu-training-name-row">
+          <label className="menu-training-name-field">
+            トレーニング名
+            <input value={item.trainingName} onChange={(e) => onUpdate({ trainingName: e.target.value })} />
+          </label>
+          <label className="menu-ai-generated-check">
+            <input
+              type="checkbox"
+              checked={item.isAiGenerated}
+              onChange={(e) => onUpdate({ isAiGenerated: e.target.checked })}
+            />
+            <span>AI生成</span>
+          </label>
+        </div>
         <div className="menu-three-fields-row">
           <label>
             鍛える部位

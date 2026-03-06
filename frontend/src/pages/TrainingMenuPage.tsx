@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppState } from '../AppState';
 import type { TrainingEquipment, TrainingFrequencyDays, TrainingMenuItem } from '../types';
+import { formatTrainingLabel } from '../utils/training';
 
 const CREATE_NEW_SET_OPTION = '__create_new_set__';
 const TRAINING_EQUIPMENT_OPTIONS: TrainingEquipment[] = ['マシン', 'フリー', '自重', 'その他'];
@@ -349,7 +350,7 @@ export function TrainingMenuPage() {
                 <option value="">種目を選択</option>
                 {addableExistingItems.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.trainingName}
+                    {formatTrainingLabel(item.trainingName, item.bodyPart, item.equipment, item.isAiGenerated)}
                   </option>
                 ))}
               </select>

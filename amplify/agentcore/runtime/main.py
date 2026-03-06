@@ -30,7 +30,9 @@ APP_TIMEZONE_DEFAULT = os.getenv("APP_TIMEZONE_DEFAULT", "Asia/Tokyo")
 SYSTEM_PROMPT_FILE_PATH = os.getenv("SYSTEM_PROMPT_FILE_PATH", "config/prompts/system-prompt.ja.txt")
 PERSONA_FILE_PATH = os.getenv("PERSONA_FILE_PATH", "config/prompts/PERSONA.md")
 SOUL_FILE_PATH = os.getenv("SOUL_FILE_PATH", "config/prompts/SOUL.md")
-STREAM_CHUNK_CHAR_SIZE = int(os.getenv("STREAM_CHUNK_CHAR_SIZE", "24"))
+STREAM_CHUNK_CHAR_SIZE = int(os.getenv("STREAM_CHUNK_CHAR_SIZE", "40"))
+STREAM_FLUSH_INTERVAL_MS = int(os.getenv("STREAM_FLUSH_INTERVAL_MS", "250"))
+STREAM_MIN_CHARS_FOR_INTERVAL_FLUSH = int(os.getenv("STREAM_MIN_CHARS_FOR_INTERVAL_FLUSH", "12"))
 MCP_GATEWAY_URL = os.getenv("MCP_GATEWAY_URL", "").strip()
 ENABLE_MCP_TOOLS = os.getenv("ENABLE_MCP_TOOLS", "true").strip().lower() != "false"
 ENABLE_WEB_SEARCH_TOOL = os.getenv("ENABLE_WEB_SEARCH_TOOL", "false").strip().lower() == "true"
@@ -209,6 +211,76 @@ def _chunk_text(text: str, chunk_size: int) -> list[str]:
         return []
     size = max(1, chunk_size)
     return [text[index : index + size] for index in range(0, len(text), size)]
+
+
+def _get_nested_mapping_value(mapping: Mapping[str, Any], path: tuple[str, ...]) -> Any:
+    current: Any = mapping
+    for key in path:
+        if not isinstance(current, Mapping):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _extract_event_text(event: Any) -> str:
+    if isinstance(event, str):
+        return event
+
+    mapping: Mapping[str, Any] | None = event if isinstance(event, Mapping) else None
+    if mapping is None and hasattr(event, "model_dump"):
+        try:
+            dumped = event.model_dump()
+            if isinstance(dumped, Mapping):
+                mapping = dumped
+        except Exception:
+            mapping = None
+    if mapping is None and hasattr(event, "__dict__"):
+        raw = getattr(event, "__dict__", None)
+        if isinstance(raw, Mapping):
+            mapping = raw
+
+    if mapping is not None:
+        for path in (
+            ("contentBlockDelta", "delta", "text"),
+            ("delta", "text"),
+            ("delta",),
+            ("chunk",),
+            ("text",),
+            ("output_text",),
+            ("content",),
+            ("message",),
+        ):
+            value = _get_nested_mapping_value(mapping, path)
+            if isinstance(value, str) and value:
+                return value
+
+        content_list = mapping.get("content")
+        if isinstance(content_list, list):
+            fragments: list[str] = []
+            for item in content_list:
+                if isinstance(item, Mapping):
+                    text = item.get("text")
+                    if isinstance(text, str) and text:
+                        fragments.append(text)
+            if fragments:
+                return "".join(fragments)
+
+    for attr in ("text", "delta", "chunk", "content", "message"):
+        value = getattr(event, attr, None)
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, Mapping):
+            nested_text = value.get("text")
+            if isinstance(nested_text, str) and nested_text:
+                return nested_text
+
+    return ""
+
+
+def _is_sentence_break(buffer: str) -> bool:
+    if not buffer:
+        return False
+    return buffer.endswith(("\n", "。", "！", "？", ".", "!", "?"))
 
 
 def _build_retrieval_config(retrieval_config_class: Any) -> dict[str, Any]:
@@ -409,13 +481,13 @@ def _list_mcp_tools(mcp_client: Any) -> list[Any]:
     return tools
 
 
-def _run_agent_turn(
+async def _run_agent_turn_stream(
     session_id: str,
     actor_id: str,
     user_text: str,
     system_prompt: str,
     authorization_header: str | None,
-) -> str:
+) -> AsyncGenerator[str, None]:
     if not MEMORY_ID:
         raise RuntimeError("MEMORY_ID is not configured in runtime environment variables.")
 
@@ -475,8 +547,14 @@ def _run_agent_turn(
             if tools:
                 agent_kwargs["tools"] = tools
             agent = Agent(**agent_kwargs)
-            response = agent(user_text)
-            return _response_to_text(response)
+            stream_async = getattr(agent, "stream_async", None)
+            if not callable(stream_async):
+                raise RuntimeError("Agent stream_async is not available.")
+
+            async for event in stream_async(user_text):
+                text = _extract_event_text(event)
+                if text:
+                    yield text
 
 
 async def _stream_runtime_response(payload: dict[str, Any], context: Any) -> AsyncGenerator[dict[str, Any], None]:
@@ -494,16 +572,33 @@ async def _stream_runtime_response(payload: dict[str, Any], context: Any) -> Asy
     system_prompt = _build_system_prompt(payload)
 
     yield {"event": "status", "status": "thinking", "message": "考え中です..."}
-    output_text = await asyncio.to_thread(
-        _run_agent_turn,
+    loop = asyncio.get_running_loop()
+    last_flush_at = loop.time()
+    buffered = ""
+    async for delta_text in _run_agent_turn_stream(
         session_id=session_id,
         actor_id=actor_id,
         user_text=user_text,
         system_prompt=system_prompt,
         authorization_header=authorization_header,
-    )
-    for chunk in _chunk_text(output_text, STREAM_CHUNK_CHAR_SIZE):
-        yield {"event": "chunk", "chunk": chunk}
+    ):
+        buffered += delta_text
+        now = loop.time()
+        elapsed_ms = int((now - last_flush_at) * 1000)
+        if (
+            len(buffered) >= max(1, STREAM_CHUNK_CHAR_SIZE)
+            or _is_sentence_break(buffered)
+            or (
+                elapsed_ms >= max(50, STREAM_FLUSH_INTERVAL_MS)
+                and len(buffered) >= max(1, STREAM_MIN_CHARS_FOR_INTERVAL_FLUSH)
+            )
+        ):
+            yield {"event": "chunk", "chunk": buffered}
+            buffered = ""
+            last_flush_at = now
+
+    if buffered:
+        yield {"event": "chunk", "chunk": buffered}
     yield {"event": "done", "runtimeSessionId": session_id}
 
 

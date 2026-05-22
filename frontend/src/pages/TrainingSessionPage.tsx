@@ -97,9 +97,30 @@ export function TrainingSessionPage() {
   const toastTimerRef = useRef<number | null>(null);
 
   const draftEntries = data.trainingDraft?.entriesByItemId ?? {};
-  const defaultMenuSet = useMemo(() => {
-    return data.menuSets.find((set) => set.isDefault) ?? data.menuSets[0] ?? null;
+  const menuSets = useMemo(() => {
+    return data.menuSets.filter((set) => set.isActive).sort((a, b) => a.order - b.order);
   }, [data.menuSets]);
+  const defaultMenuSet = useMemo(() => {
+    return menuSets.find((set) => set.isDefault) ?? menuSets[0] ?? null;
+  }, [menuSets]);
+  const [selectedMenuSetId, setSelectedMenuSetId] = useState('');
+
+  useEffect(() => {
+    if (menuSets.length === 0) {
+      if (selectedMenuSetId) {
+        setSelectedMenuSetId('');
+      }
+      return;
+    }
+    if (!menuSets.some((set) => set.id === selectedMenuSetId)) {
+      setSelectedMenuSetId(defaultMenuSet?.id ?? menuSets[0].id);
+    }
+  }, [defaultMenuSet?.id, menuSets, selectedMenuSetId]);
+
+  const selectedMenuSet = useMemo(() => {
+    return menuSets.find((set) => set.id === selectedMenuSetId) ?? defaultMenuSet;
+  }, [defaultMenuSet, menuSets, selectedMenuSetId]);
+  const effectiveSelectedMenuSetId = selectedMenuSet?.id ?? '';
 
   useEffect(() => {
     let isActive = true;
@@ -108,7 +129,7 @@ export function TrainingSessionPage() {
       setIsSessionViewLoading(true);
       setSessionViewError('');
       try {
-        const remote = await getTrainingSessionView(today);
+        const remote = await getTrainingSessionView(today, effectiveSelectedMenuSetId || undefined);
         if (!isActive) {
           return;
         }
@@ -158,7 +179,7 @@ export function TrainingSessionPage() {
     return () => {
       isActive = false;
     };
-  }, [today]);
+  }, [effectiveSelectedMenuSetId, today]);
 
   const prioritized = useMemo(() => {
     return getPrioritizedTrainingSessionItems({
@@ -166,6 +187,17 @@ export function TrainingSessionPage() {
       todayYmd: today
     });
   }, [sessionItems, today]);
+
+  const menuItemById = useMemo(() => {
+    const map = new Map<string, TrainingSessionMenuItem>();
+    for (const item of data.menuItems) {
+      map.set(item.id, item);
+    }
+    for (const item of sessionItems) {
+      map.set(item.id, item);
+    }
+    return map;
+  }, [data.menuItems, sessionItems]);
 
   function initSetDetails(menuItemId: string, sets: number, weightKg: number, reps: number) {
     const details: SetDetail[] = Array.from({ length: Math.max(1, sets) }).map((_, idx) => ({
@@ -177,9 +209,25 @@ export function TrainingSessionPage() {
   }
 
   const enteredItems = useMemo(() => {
-    return prioritized
-      .map((item) => {
-        const draft = draftEntries[item.id];
+    return Object.values(draftEntries)
+      .map((draft) => {
+        const item =
+          menuItemById.get(draft.menuItemId) ??
+          ({
+            id: draft.menuItemId,
+            trainingName: '不明トレーニング',
+            bodyPart: '',
+            equipment: 'その他',
+            isAiGenerated: false,
+            memo: '',
+            frequency: 3,
+            defaultWeightKg: 0,
+            defaultRepsMin: 1,
+            defaultRepsMax: 1,
+            defaultSets: 1,
+            order: Number.MAX_SAFE_INTEGER,
+            isActive: true
+          } satisfies TrainingSessionMenuItem);
         const hasStarted =
           (draft?.weightKg ?? 0) > 0 ||
           (draft?.reps ?? 0) > 0 ||
@@ -195,8 +243,9 @@ export function TrainingSessionPage() {
           isValid
         };
       })
-      .filter((entry) => entry.hasStarted);
-  }, [prioritized, draftEntries]);
+      .filter((entry) => entry.hasStarted)
+      .sort((a, b) => a.item.order - b.item.order || a.item.trainingName.localeCompare(b.item.trainingName));
+  }, [draftEntries, menuItemById]);
 
   const validEnteredItems = enteredItems.filter((entry) => entry.isValid);
   const incompleteEnteredItems = enteredItems.filter((entry) => !entry.isValid);
@@ -245,7 +294,27 @@ export function TrainingSessionPage() {
           <div>
             <h1>トレーニング実施</h1>
             <p className="session-date">{ymdToDisplay(today)}</p>
-            {defaultMenuSet && <p className="muted">メニューセット: {defaultMenuSet.setName}</p>}
+            <label className="session-menu-set-select">
+              <span>メニューセット</span>
+              <select
+                value={effectiveSelectedMenuSetId}
+                disabled={menuSets.length === 0}
+                onChange={(event) => {
+                  setSelectedMenuSetId(event.target.value);
+                }}
+              >
+                {menuSets.length === 0 ? (
+                  <option value="">メニューセットなし</option>
+                ) : (
+                  menuSets.map((set) => (
+                    <option value={set.id} key={set.id}>
+                      {set.setName}
+                      {set.isDefault ? ' (デフォルト)' : ''}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
           </div>
           <button
             type="button"
@@ -278,7 +347,7 @@ export function TrainingSessionPage() {
 
         {!isSessionViewLoading && !sessionViewError && prioritized.length === 0 && (
           <article className="card training-session-card">
-            <p className="muted">デフォルトのメニューセットに有効な種目がありません。</p>
+            <p className="muted">選択中のメニューセットに有効な種目がありません。</p>
           </article>
         )}
 

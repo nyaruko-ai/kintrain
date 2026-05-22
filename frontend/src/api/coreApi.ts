@@ -411,9 +411,12 @@ export async function listGymVisits(params?: { from?: string; to?: string; limit
   });
 }
 
-export async function getTrainingSessionView(date: string): Promise<TrainingSessionViewResponse> {
+export async function getTrainingSessionView(date: string, trainingMenuSetId?: string): Promise<TrainingSessionViewResponse> {
   const search = new URLSearchParams();
   search.set('date', date);
+  if (trainingMenuSetId) {
+    search.set('trainingMenuSetId', trainingMenuSetId);
+  }
   return coreApiFetch<TrainingSessionViewResponse>(`/training-session-view?${search.toString()}`, {
     method: 'GET'
   });

@@ -52,8 +52,11 @@ function toPositiveNumberOrUndefined(value: string): number | undefined {
 }
 
 function toWeightNumber(value: string): number | undefined {
-  const num = toPositiveNumberOrUndefined(value);
-  if (num === undefined) {
+  if (value.trim() === '') {
+    return undefined;
+  }
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) {
     return undefined;
   }
   return Math.round(num * 100) / 100;
@@ -79,7 +82,11 @@ function formatRepsInputLabel(min: number, max: number): string {
 }
 
 function hasStartedDraftEntry(entry: Partial<DraftEntry> | undefined): boolean {
-  return (entry?.weightKg ?? 0) > 0 || (entry?.reps ?? 0) > 0 || (entry?.sets ?? 0) > 0;
+  return entry?.weightKg !== undefined || (entry?.reps ?? 0) > 0 || (entry?.sets ?? 0) > 0;
+}
+
+function hasValidWeight(entry: Partial<DraftEntry> | undefined): boolean {
+  return typeof entry?.weightKg === 'number' && Number.isFinite(entry.weightKg) && entry.weightKg >= 0;
 }
 
 export function TrainingSessionPage() {
@@ -229,11 +236,11 @@ export function TrainingSessionPage() {
             isActive: true
           } satisfies TrainingSessionMenuItem);
         const hasStarted =
-          (draft?.weightKg ?? 0) > 0 ||
+          draft?.weightKg !== undefined ||
           (draft?.reps ?? 0) > 0 ||
           (draft?.sets ?? 0) > 0;
         const isValid =
-          (draft?.weightKg ?? 0) > 0 &&
+          hasValidWeight(draft) &&
           (draft?.reps ?? 0) > 0 &&
           (draft?.sets ?? 0) > 0;
         return {
@@ -365,7 +372,7 @@ export function TrainingSessionPage() {
             draft && Object.prototype.hasOwnProperty.call(draft, 'memo') ? (draft.memo ?? '') : seedMemo;
           const isDetailOpen = !!openSetDetailIds[item.id];
           const hasStarted =
-            (draft?.weightKg ?? 0) > 0 ||
+            draft?.weightKg !== undefined ||
             (draft?.reps ?? 0) > 0 ||
             (draft?.sets ?? 0) > 0;
 

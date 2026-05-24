@@ -942,7 +942,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         }
 
         const entries: ExerciseEntry[] = Object.values(draft.entriesByItemId)
-          .filter((entry) => (entry.weightKg ?? 0) > 0 && (entry.reps ?? 0) > 0 && (entry.sets ?? 0) > 0)
+          .filter(
+            (entry) =>
+              typeof entry.weightKg === 'number' &&
+              Number.isFinite(entry.weightKg) &&
+              entry.weightKg >= 0 &&
+              (entry.reps ?? 0) > 0 &&
+              (entry.sets ?? 0) > 0
+          )
           .map((entry) => {
             const menuItem = data.menuItems.find((item) => item.id === entry.menuItemId);
             return {

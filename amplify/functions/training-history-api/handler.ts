@@ -79,6 +79,10 @@ function isPositiveNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
+function isNonNegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 function toTrimmedString(value: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
@@ -97,7 +101,7 @@ function validateEntries(entries: ExerciseEntry[] | undefined): boolean {
       entry.trainingMenuItemId.trim().length > 0 &&
       typeof entry.trainingNameSnapshot === "string" &&
       entry.trainingNameSnapshot.trim().length > 0 &&
-      isPositiveNumber(entry.weightKg) &&
+      isNonNegativeNumber(entry.weightKg) &&
       isPositiveNumber(entry.reps) &&
       isPositiveNumber(entry.sets) &&
       typeof entry.performedAtUtc === "string" &&

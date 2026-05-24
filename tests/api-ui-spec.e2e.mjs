@@ -421,7 +421,7 @@ async function run() {
               trainingMenuItemId: state.menuItemB,
               trainingNameSnapshot: "ラットプルダウン",
               bodyPartSnapshot: "背中",
-              weightKg: 32.5,
+              weightKg: 0,
               reps: 10,
               sets: 3,
               performedAtUtc: startedAt
@@ -433,6 +433,7 @@ async function run() {
       assert.equal(res.status, 201);
       assert.ok(res.json.visitId);
       assert.equal(res.json.entries?.[0]?.bodyPartSnapshot, "背中");
+      assert.equal(res.json.entries?.[0]?.weightKg, 0);
       state.visitId = res.json.visitId;
     });
 
